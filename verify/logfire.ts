@@ -9,7 +9,7 @@ const token = process.env.LOGFIRE_TOKEN;
 const { setupOtel } = await import("../src/otel.ts");
 const p = await setupOtel("https://logfire-eu.pydantic.dev", "http/protobuf", 1000, 500, "2.0.0-v2-port-verify", `Authorization=${token}`);
 const t = trace.getTracer("verify");
-const s = t.startSpan("logfire-verify-span", { attributes: { "verify.source": "mergecraft-v2-port", "session.id": "ses_verify" } });
+const s = t.startSpan("logfire-verify-span", { attributes: { "verify.source": "opencode-plugin-otel-v2", "session.id": "ses_verify" } });
 s.end();
 await p.tracerProvider.forceFlush();
 await new Promise((r) => setTimeout(r, 2500));
