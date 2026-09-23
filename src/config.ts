@@ -31,6 +31,7 @@ export type PluginConfig = {
   tracePropagationProviders: Set<string>
   redactSecrets: boolean
   redactValues: string[]
+  locationAttributes: string
 }
 
 export function parseAttributePairs(raw: string | undefined): Record<string, string> {
@@ -77,6 +78,7 @@ export type OtelPluginOptions = {
   tracePropagationProviders?: string[]
   redactSecrets?: boolean
   redactValues?: string[]
+  locationAttributes?: string
 }
 
 const VALID_PROTOCOLS = new Set<PluginConfig["protocol"]>(["grpc", "http/protobuf", "http/json"])
@@ -218,6 +220,10 @@ export function loadConfig(options: OtelPluginOptions = {}): PluginConfig {
     tracePropagationProviders,
     redactSecrets: pickBoolean(resolvedOptions.redactSecrets) ?? !hasNonEmptyEnv("OPENCODE_NO_REDACT"),
     redactValues: collectRedactValues(resolvedOptions.redactValues),
+    locationAttributes:
+      pickString(resolvedOptions.locationAttributes) ??
+      pickString(process.env["OPENCODE_LOCATION_ATTRIBUTES"]) ??
+      ".opencode/attributes.json",
   }
 }
 

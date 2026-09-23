@@ -26,13 +26,14 @@ import { errorSummary, modelRef, type V2Error, type V2Model } from "../v2.ts"
 const OPENINFERENCE_SPAN_KIND = SemanticConventions.OPENINFERENCE_SPAN_KIND
 
 /**
- * Reads per-worktree trace attributes (e.g. `wave.plan`, `run.id`) written by the operator
- * tooling at `<location>/.ignorelocal/wave-run.json`. Returns a flat string map.
+ * Reads per-location trace attributes from a JSON file under the location directory. The
+ * relative path is configured by the `locationAttributes` option (default
+ * `.opencode/attributes.json`). Returns a flat string map.
  */
-function loadWaveAttrs(directory: string | undefined): Record<string, string> {
-  if (!directory) return {}
+function loadLocationAttrs(directory: string | undefined, relativePath: string): Record<string, string> {
+  if (!directory || !relativePath) return {}
   try {
-    const parsed: unknown = JSON.parse(readFileSync(join(directory, ".ignorelocal", "wave-run.json"), "utf8"))
+    const parsed: unknown = JSON.parse(readFileSync(join(directory, relativePath), "utf8"))
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {}
     const out: Record<string, string> = {}
     for (const [key, value] of Object.entries(parsed)) {
@@ -187,7 +188,7 @@ export function handleSessionCreated(
     agent,
     model: data.model ? modelRef(data.model) : (ctx.sessionMeta.get(sessionID)?.model ?? "unknown"),
   })
-  setBoundedMap(ctx.sessionAttrs, sessionID, loadWaveAttrs(data.location?.directory))
+  setBoundedMap(ctx.sessionAttrs, sessionID, loadLocationAttrs(data.location?.directory, ctx.locationAttributes))
 
   if (isTraceEnabled("session", ctx) && data.parentID) {
     // Nest under the parent's subagent-dispatch tool span when available, so the whole

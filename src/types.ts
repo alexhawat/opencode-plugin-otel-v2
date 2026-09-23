@@ -90,10 +90,12 @@ export type HandlerContext = {
   pendingSubagentSpans: Map<string, Span>
   sessionTotals: Map<string, SessionTotals>
   sessionMeta: Map<string, { agent: string; model: string }>
-  /** Per-session attribute overrides (e.g. wave.plan/run.id from a worktree tag file). */
+  /** Per-session attribute overrides (e.g. from the `locationAttributes` file). */
   sessionAttrs: Map<string, Readonly<Record<string, string>>>
   /** `commonAttrs` merged with any per-session overrides, for span/log/metric attributes. */
   attrsFor: (sessionID: string) => CommonAttrs
+  /** Location-relative path of the per-location attributes JSON file. */
+  locationAttributes: string
   disabledMetrics: Set<string>
   disabledTraces: Set<string>
   tracer: Tracer

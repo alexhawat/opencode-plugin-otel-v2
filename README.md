@@ -89,6 +89,7 @@ environment variable, which wins over the default.
 | `capturePromptInLogs` | `OPENCODE_CAPTURE_PROMPT_IN_LOGS` | Put the prompt text on the `user_prompt` log. |
 | `redactSecrets` | `true` (`!OPENCODE_NO_REDACT`) | Mask credential-shaped strings and known secrets. |
 | `redactValues` | — | Exact values to mask verbatim. |
+| `locationAttributes` | `OPENCODE_LOCATION_ATTRIBUTES` / `.opencode/attributes.json` | Location-relative JSON file of per-session attributes. |
 | `disabledMetrics` / `disabledTraces` | `OPENCODE_DISABLE_METRICS` / `OPENCODE_DISABLE_TRACES` | Silence by name (`session`, `llm`, `tool` for traces). |
 | `traceparent` / `tracestate` | `OPENCODE_TRACEPARENT` / `OPENCODE_TRACESTATE` | W3C parent for the root. |
 | `tracePropagationProviders` | `OPENCODE_TRACE_PROPAGATION_PROVIDERS` | Providers to inject W3C headers into (`*` = all). |
@@ -107,18 +108,23 @@ environment variable, which wins over the default.
 | `session.error` log + error span status | `session.execution.failed` |
 | W3C trace-context header injection | `model.request` hook |
 
-## Per-location attributes (wave tagging)
+## Per-location attributes
 
-At `session.created`, the plugin reads `<location>/.ignorelocal/wave-run.json` — a flat string
-map — and merges those attributes into that session's spans, logs, and metrics. This tags a
-worktree's sessions with a synthesised run id without touching global config:
+Set `locationAttributes` to a location-relative JSON file (default `.opencode/attributes.json`) and
+the plugin merges its contents — a flat string map — into each session's spans, logs, and metrics at
+`session.created`. Use it to tag sessions per working copy (e.g. a run id) without changing global
+config:
 
-```json
-{ "run.id": "f51a0acf-…", "wave.plan": "demo", "wave.file": "demo-wave-plan.md", "wave.id": "R2" }
+```jsonc
+{ "locationAttributes": ".opencode/attributes.json" }
 ```
 
-Filter in Logfire with `attributes->>'run.id' = '…'`. A missing or malformed file is ignored, and
-sessions in other locations are unaffected.
+```json
+{ "run.id": "f51a0acf-…", "build.id": "b42" }
+```
+
+Filter with `attributes->>'run.id' = '…'`. A missing or malformed file is ignored, and sessions in
+other locations are unaffected.
 
 ## Secret redaction
 

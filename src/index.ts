@@ -279,6 +279,7 @@ export default {
         ...commonAttrs,
         ...(tracing.sessionAttrs.get(sessionID) ?? {}),
       }),
+      locationAttributes: config.locationAttributes,
       disabledMetrics: config.disabledMetrics,
       disabledTraces: config.disabledTraces,
       tracer,

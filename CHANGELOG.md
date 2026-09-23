@@ -16,7 +16,8 @@ Initial V2 port of [`@devtheops/opencode-plugin-otel`](https://github.com/DEVthe
 - `user_prompt` log emitted on the first step, linked to the run span, with resolved agent/model.
 - Prompt-text capture (`capturePromptInLogs`) and best-effort secret redaction
   (`redactSecrets`, `redactValues`).
-- Per-location attributes: `<location>/.ignorelocal/wave-run.json` is read at `session.created`
-  and merged into that session's spans/logs/metrics (used to tag wave runs by `run.id`).
+- Per-location attributes: a location-relative JSON file (`locationAttributes`, default
+  `.opencode/attributes.json`) is read at `session.created` and merged into that session's
+  spans/logs/metrics.
 - Not ported from V1: message/part spans, permission telemetry, `command.executed`,
   `session.diff` metrics.
