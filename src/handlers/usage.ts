@@ -85,7 +85,7 @@ export function handleStepStarted(
           prompt_length: promptText.length,
           ...(ctx.capturePromptInLogs ? { prompt: ctx.redact(promptText) } : {}),
           model: modelRef(data.model),
-          ...ctx.commonAttrs,
+          ...ctx.attrsFor(data.sessionID),
         },
       },
       promptContext,
@@ -105,7 +105,7 @@ export function handleStepStarted(
         "gen_ai.provider.name": genAiProviderName(providerID),
         [LLM_MODEL_NAME]: modelID,
         agent,
-        ...ctx.commonAttrs,
+        ...ctx.attrsFor(data.sessionID),
       },
     },
     resolveSessionTraceContext(data.sessionID, ctx, { assistantMessageID: data.assistantMessageID }),
@@ -145,7 +145,7 @@ export function handleStepEnded(
   const step = ctx.stepSpans.get(key)
   const tokens = data.tokens
   const total = totalTokens(tokens)
-  const attrs = { ...ctx.commonAttrs, "session.id": data.sessionID, agent: step?.agent ?? "unknown" }
+  const attrs = { ...ctx.attrsFor(data.sessionID), "session.id": data.sessionID, agent: step?.agent ?? "unknown" }
 
   if (step) {
     step.span.setAttributes({

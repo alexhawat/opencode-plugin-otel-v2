@@ -107,6 +107,19 @@ environment variable, which wins over the default.
 | `session.error` log + error span status | `session.execution.failed` |
 | W3C trace-context header injection | `model.request` hook |
 
+## Per-location attributes (wave tagging)
+
+At `session.created`, the plugin reads `<location>/.ignorelocal/wave-run.json` — a flat string
+map — and merges those attributes into that session's spans, logs, and metrics. This tags a
+worktree's sessions with a synthesised run id without touching global config:
+
+```json
+{ "run.id": "f51a0acf-…", "wave.plan": "demo", "wave.file": "demo-wave-plan.md", "wave.id": "R2" }
+```
+
+Filter in Logfire with `attributes->>'run.id' = '…'`. A missing or malformed file is ignored, and
+sessions in other locations are unaffected.
+
 ## Secret redaction
 
 `redactSecrets` (default on) masks credential-shaped substrings before anything is exported:

@@ -87,6 +87,7 @@ type TracingState = {
   pendingToolNames: HandlerContext["pendingToolNames"]
   sessionTotals: HandlerContext["sessionTotals"]
   sessionMeta: HandlerContext["sessionMeta"]
+  sessionAttrs: HandlerContext["sessionAttrs"]
   runSpans: HandlerContext["runSpans"]
   runSpanContexts: HandlerContext["runSpanContexts"]
   activeRuns: HandlerContext["activeRuns"]
@@ -107,6 +108,7 @@ function emptyTracing(): TracingState {
     pendingToolNames: new Map(),
     sessionTotals: new Map(),
     sessionMeta: new Map(),
+    sessionAttrs: new Map(),
     runSpans: new Map(),
     runSpanContexts: new Map(),
     activeRuns: new Map(),
@@ -272,6 +274,11 @@ export default {
       pendingSubagentSpans: tracing.pendingSubagentSpans,
       sessionTotals: tracing.sessionTotals,
       sessionMeta: tracing.sessionMeta,
+      sessionAttrs: tracing.sessionAttrs,
+      attrsFor: (sessionID: string) => ({
+        ...commonAttrs,
+        ...(tracing.sessionAttrs.get(sessionID) ?? {}),
+      }),
       disabledMetrics: config.disabledMetrics,
       disabledTraces: config.disabledTraces,
       tracer,

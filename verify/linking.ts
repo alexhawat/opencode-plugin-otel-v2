@@ -123,6 +123,23 @@ const cleanups: Array<() => Promise<void>> = [];
   a.close();
 }
 
+// Test 4: per-worktree wave attributes from <location>/.ignorelocal/wave-run.json.
+{
+  const { mkdirSync, writeFileSync, rmSync } = await import("node:fs");
+  const dir = "/tmp/otel-wave-test";
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(`${dir}/.ignorelocal`, { recursive: true });
+  writeFileSync(`${dir}/.ignorelocal/wave-run.json`, JSON.stringify({ "run.id": "run-test-123", "wave.plan": "demo", "wave.id": "R2" }));
+
+  const a = makeCtx();
+  cleanups.push((await mod.default.setup(a.ctx)) ?? (async () => {}));
+  a.push({ type: "session.created", created: Date.now(), data: { sessionID: "ses_wave", agent: "build", location: { directory: dir } } });
+  await a.hooks.prompt({ sessionID: "ses_wave", messageID: "msg_wave_user", prompt: { text: "run the wave" } });
+  a.push(...turn("ses_wave", "msg_wave_asst", "call_w"));
+  a.close();
+  await sleep(1200);
+}
+
 await sleep(600);
 for (const c of cleanups) await c();
 await sleep(600);
@@ -172,6 +189,18 @@ for (const sessionID of ["ses_single", "ses_multi"]) {
   check(!!childRun, "subagent run span nests under the child session span");
   check(!!childLlm && childLlm.parentSpanId === childRun?.spanId, "child llm span nests under the subagent run span");
   check(!!childTool && childTool.parentSpanId === childRun?.spanId, "child tool span nests under the subagent run span");
+}
+
+{
+  const mine = spans.filter((s) => attr(s)["session.id"] === "ses_wave");
+  console.log(`\nwave attrs: spans=${mine.length}`);
+  const run = mine.find((s) => s.name === "opencode.session");
+  const llm = mine.find((s) => s.name === "opencode.llm");
+  const tool = mine.find((s) => s.name === "opencode.tool.read");
+  check(!!run && attr(run)["run.id"] === "run-test-123", "run span carries run.id from wave-run.json");
+  check(!!run && attr(run)["wave.plan"] === "demo" && attr(run)["wave.id"] === "R2", "run span carries wave.plan/wave.id");
+  check(!!llm && attr(llm)["run.id"] === "run-test-123", "llm span carries run.id");
+  check(!!tool && attr(tool)["run.id"] === "run-test-123", "tool span carries run.id");
 }
 
 console.log(`\n${failures === 0 ? "PASS" : `FAIL (${failures})`}`);

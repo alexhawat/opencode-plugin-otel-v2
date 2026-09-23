@@ -1,5 +1,7 @@
 import { SeverityNumber } from "@opentelemetry/api-logs"
 import { SpanStatusCode, trace } from "@opentelemetry/api"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import {
   AGENT_NAME,
   INPUT_MIME_TYPE,
@@ -24,6 +26,25 @@ import { errorSummary, modelRef, type V2Error, type V2Model } from "../v2.ts"
 const OPENINFERENCE_SPAN_KIND = SemanticConventions.OPENINFERENCE_SPAN_KIND
 
 /**
+ * Reads per-worktree trace attributes (e.g. `wave.plan`, `run.id`) written by the operator
+ * tooling at `<location>/.ignorelocal/wave-run.json`. Returns a flat string map.
+ */
+function loadWaveAttrs(directory: string | undefined): Record<string, string> {
+  if (!directory) return {}
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(join(directory, ".ignorelocal", "wave-run.json"), "utf8"))
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {}
+    const out: Record<string, string> = {}
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === "string") out[key] = value
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+/**
  * Creates the session totals entry on first sight. V2 does not always emit `session.created`
  * (e.g. for sessions that predate the plugin), so totals are created lazily from whichever
  * event arrives first. The session counter and `session.created` log are emitted exactly once.
@@ -44,7 +65,7 @@ export function ensureSessionTotals(
   }
   if (isMetricEnabled("session.count", ctx)) {
     ctx.instruments.sessionCounter.add(1, {
-      ...ctx.commonAttrs,
+      ...ctx.attrsFor(sessionID),
       "session.id": sessionID,
       is_subagent: agentType === "subagent",
     })
@@ -73,7 +94,7 @@ export function ensureSessionTotals(
       "session.id": sessionID,
       is_subagent: agentType === "subagent",
       ...agentAttrs(agent, agentType),
-      ...ctx.commonAttrs,
+      ...ctx.attrsFor(sessionID),
     },
   })
   return true
@@ -131,7 +152,7 @@ export function handleRunStarted(
             }
           : {}),
         model,
-        ...ctx.commonAttrs,
+        ...ctx.attrsFor(sessionID),
       },
     },
     // Subagent turns nest under their session span (itself under the parent's dispatch
@@ -146,7 +167,14 @@ export function handleRunStarted(
 
 /** Records a session's creation, starting a subagent session span when it has a parent. */
 export function handleSessionCreated(
-  data: { sessionID: string; parentID?: string; agent?: string; model?: V2Model; title?: string },
+  data: {
+    sessionID: string
+    parentID?: string
+    agent?: string
+    model?: V2Model
+    title?: string
+    location?: { directory?: string }
+  },
   createdAt: number,
   ctx: HandlerContext,
 ) {
@@ -159,6 +187,7 @@ export function handleSessionCreated(
     agent,
     model: data.model ? modelRef(data.model) : (ctx.sessionMeta.get(sessionID)?.model ?? "unknown"),
   })
+  setBoundedMap(ctx.sessionAttrs, sessionID, loadWaveAttrs(data.location?.directory))
 
   if (isTraceEnabled("session", ctx) && data.parentID) {
     // Nest under the parent's subagent-dispatch tool span when available, so the whole
@@ -178,7 +207,7 @@ export function handleSessionCreated(
           "agent.type": agentType,
           "session.is_subagent": isSubagent,
           ...(data.model ? { model: modelRef(data.model) } : {}),
-          ...ctx.commonAttrs,
+          ...ctx.attrsFor(sessionID),
         },
       },
       parentContext,
@@ -290,7 +319,7 @@ export function handleExecutionEnded(
   ctx.promptEmitted.delete(sessionID)
   ctx.runPrompts.delete(sessionID)
 
-  const attrs = { ...ctx.commonAttrs, "session.id": sessionID }
+  const attrs = { ...ctx.attrsFor(sessionID), "session.id": sessionID }
   if (totals) {
     if (isMetricEnabled("session.duration", ctx)) {
       ctx.instruments.sessionDurationHistogram.record(Date.now() - totals.startMs, attrs)
@@ -317,7 +346,7 @@ export function handleExecutionEnded(
       total_cost_usd: totals?.cost ?? 0,
       total_messages: totals?.messages ?? 0,
       ...agentAttrs(agentName, agentType),
-      ...ctx.commonAttrs,
+      ...ctx.attrsFor(sessionID),
     },
   })
   ctx.log(error ? "error" : "debug", error ? "otel: session.execution.failed" : "otel: session.execution.succeeded", {
@@ -334,7 +363,7 @@ export function handleSessionIdle(sessionID: string, ctx: HandlerContext) {
   ctx.sessionTotals.delete(sessionID)
   sweepSession(sessionID, ctx)
 
-  const attrs = { ...ctx.commonAttrs, "session.id": sessionID }
+  const attrs = { ...ctx.attrsFor(sessionID), "session.id": sessionID }
   if (totals) {
     if (isMetricEnabled("session.duration", ctx)) {
       ctx.instruments.sessionDurationHistogram.record(Date.now() - totals.startMs, attrs)
@@ -362,7 +391,7 @@ export function handleSessionIdle(sessionID: string, ctx: HandlerContext) {
       total_cost_usd: totals?.cost ?? 0,
       total_messages: totals?.messages ?? 0,
       ...agentAttrs(agentName, agentType),
-      ...ctx.commonAttrs,
+      ...ctx.attrsFor(sessionID),
     },
   })
   ctx.log("debug", "otel: session.idle", { sessionID })
@@ -381,7 +410,7 @@ export function handleSessionStatus(
   if (data.status?.type !== "retry") return
   const { sessionID, status } = data
   if (isMetricEnabled("retry.count", ctx)) {
-    ctx.instruments.retryCounter.add(1, { ...ctx.commonAttrs, "session.id": sessionID })
+    ctx.instruments.retryCounter.add(1, { ...ctx.attrsFor(sessionID), "session.id": sessionID })
     ctx.log("debug", "otel: retry counter incremented", {
       sessionID,
       attempt: status.attempt,

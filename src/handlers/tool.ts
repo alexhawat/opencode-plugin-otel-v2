@@ -40,7 +40,7 @@ export function handleToolCalled(
         [TOOL_NAME]: tool,
         [INPUT_VALUE]: ctx.redact(JSON.stringify(data.input ?? {})),
         [INPUT_MIME_TYPE]: MimeType.JSON,
-        ...ctx.commonAttrs,
+        ...ctx.attrsFor(data.sessionID),
       },
     },
     resolveSessionTraceContext(data.sessionID, ctx, {
@@ -96,7 +96,7 @@ function finishTool(
 
   if (isMetricEnabled("tool.duration", ctx)) {
     ctx.instruments.toolDurationHistogram.record(duration, {
-      ...ctx.commonAttrs,
+      ...ctx.attrsFor(sessionID),
       "session.id": sessionID,
       tool,
     })
