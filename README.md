@@ -26,7 +26,7 @@ opencode plugin add opencode-plugin-otel-v2
 ### Git
 
 ```sh
-opencode plugin add github:<owner>/opencode-plugin-otel-v2
+opencode plugin add github:alexhawat/opencode-plugin-otel-v2
 ```
 
 ### Local directory

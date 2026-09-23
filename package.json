@@ -13,6 +13,14 @@
     "observability",
     "logfire"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alexhawat/opencode-plugin-otel-v2.git"
+  },
+  "homepage": "https://github.com/alexhawat/opencode-plugin-otel-v2#readme",
+  "bugs": {
+    "url": "https://github.com/alexhawat/opencode-plugin-otel-v2/issues"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
