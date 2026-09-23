@@ -1,0 +1,30 @@
+{
+  // Add this to ~/.config/opencode/opencode.jsonc (global) or a project opencode.json.
+  // Keep the token out of the file: set LOGFIRE_TOKEN in the environment.
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    {
+      // npm install:  "opencode-plugin-otel-v2"
+      // git install:  "github:<owner>/opencode-plugin-otel-v2"
+      // local dir:    "/absolute/path/to/opencode-plugin-otel-v2"
+      "package": "opencode-plugin-otel-v2",
+      "options": {
+        "enabled": true,
+        "endpoint": "https://logfire-eu.pydantic.dev",
+        "protocol": "http/protobuf",
+        "otlpHeaders": "Authorization={env:LOGFIRE_TOKEN}",
+        "resourceAttributes": "service.name=my-service,deployment.environment=dev",
+
+        // Capture the prompt text on the user_prompt log and the run span (default: off).
+        "capturePromptInLogs": true,
+        // Mask credential-shaped strings and known secret values (default: on).
+        "redactSecrets": true,
+        // Optional: exact values to mask verbatim, in addition to secret-looking env vars.
+        "redactValues": [],
+
+        // Optional: silence individual metrics by name (suffix after the metric prefix).
+        "disabledMetrics": ["cache.count", "session.duration", "retry.count"]
+      }
+    }
+  ]
+}
