@@ -97,6 +97,11 @@ export class DynamicHeaders {
         { timeout: this.helperTimeoutMs, killSignal: "SIGTERM", maxBuffer: 1024 * 1024 },
         (error, out, err) => {
           if (error) {
+            const signal = (error as NodeJS.ErrnoException & { signal?: string | null }).signal
+            if (signal) {
+              reject(new Error(`OTLP headers helper was terminated by ${signal}`))
+              return
+            }
             const detail = (err ?? "").trim() || error.message
             reject(new Error(`OTLP headers helper failed: ${detail}`))
             return
