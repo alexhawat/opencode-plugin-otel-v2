@@ -71,6 +71,15 @@ if (hooks.prompt) await hooks.prompt({ sessionID: ses, messageID: "msg_user", pr
 if (hooks["model.request"]) await hooks["model.request"]({ sessionID: ses, agent: "build", model: { id: "deepseek-v4.1-flash", providerID: "opencode-go" }, kind: "primary", headers: {} });
 
 await new Promise((r) => setTimeout(r, 6000));
+
+// Idle-silence regression: with delta temporality (the default) an idle process must not
+// re-export metric snapshots on every interval. Count metric requests, wait three more
+// intervals with no activity, and require the count to stay flat. Cumulative temporality
+// re-exports every series on every tick and would grow this count.
+const metricsBeforeIdle = bodies.filter((b) => b.path === "/v1/metrics").length;
+await new Promise((r) => setTimeout(r, 3500));
+const metricsAfterIdle = bodies.filter((b) => b.path === "/v1/metrics").length;
+
 await cleanup();
 await new Promise((r) => setTimeout(r, 500));
 server.stop(true);
@@ -78,6 +87,11 @@ server.stop(true);
 console.log("=== received OTLP requests ===");
 for (const r of received) console.log(r);
 console.log(received.length > 0 ? "PASS: telemetry exported" : "FAIL: nothing exported");
+console.log(
+  metricsBeforeIdle > 0 && metricsAfterIdle === metricsBeforeIdle
+    ? `PASS: metrics idle-silent (${metricsAfterIdle} exports during activity, none while idle)`
+    : `FAIL: metric exports while idle (${metricsBeforeIdle} -> ${metricsAfterIdle})`,
+);
 
 console.log("\n=== trace spans ===");
 for (const { path, body } of bodies) {

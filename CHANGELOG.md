@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0
+
+- **fix: default metrics to `delta` temporality.** Under the SDK default (`cumulative`) every
+  metric series was re-exported on every interval for the lifetime of the process, with no idle
+  stop, and the series set grew with each session (session/run/wave attributes). In one incident
+  this reached ~1.6M metric points/day while all sessions were idle and exhausted the backend's
+  ingest quota. Delta reports only changes: idle periods export nothing. Override with
+  `metricsTemporality`, `OPENCODE_OTLP_METRICS_TEMPORALITY`, or the standard
+  `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE`; `cumulative` remains available for
+  short-lived processes. This also matches Logfire's OTLP metric ingest, which expects delta.
+- verify: the e2e harness now asserts that no metric exports occur while idle.
+- The "starting up" diagnostic now records the resolved metrics temporality.
+
 ## 0.1.0
 
 Initial V2 port of [`@devtheops/opencode-plugin-otel`](https://github.com/DEVtheOPS/opencode-plugin-otel)

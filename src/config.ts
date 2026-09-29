@@ -152,6 +152,12 @@ function expandDisabledTraces(values: string[]): Set<string> {
  * `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_RESOURCE_ATTRIBUTES`, and
  * `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` so the OTel SDK picks them
  * up automatically when initialised.
+ *
+ * Metrics default to `delta`: cumulative snapshots are re-exported on every
+ * interval for the lifetime of the process — never idle-stopped — and each new
+ * session/series adds to that payload, which can burn through an endpoint's
+ * ingest quota while nobody is using OpenCode. Delta reports only changes, so an
+ * idle process exports nothing; Logfire's metric ingest expects delta.
  */
 export function loadConfig(options: OtelPluginOptions = {}): PluginConfig {
   const resolvedOptions = typeof options === "object" && options !== null ? options : {}
@@ -163,7 +169,11 @@ export function loadConfig(options: OtelPluginOptions = {}): PluginConfig {
   const tracestate = pickString(resolvedOptions.tracestate) ?? process.env["OPENCODE_TRACESTATE"]
   const optionMetricsTemporality = pickMetricsTemporality(resolvedOptions.metricsTemporality)
   const envMetricsTemporality = pickMetricsTemporality(process.env["OPENCODE_OTLP_METRICS_TEMPORALITY"])
-  const metricsTemporality = optionMetricsTemporality ?? envMetricsTemporality
+  const standardEnvMetricsTemporality = pickMetricsTemporality(
+    process.env["OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE"],
+  )
+  const metricsTemporality =
+    optionMetricsTemporality ?? envMetricsTemporality ?? standardEnvMetricsTemporality ?? "delta"
   const protocol = pickProtocol(resolvedOptions.protocol)
     ?? pickProtocol(process.env["OPENCODE_OTLP_PROTOCOL"])
     ?? "grpc"

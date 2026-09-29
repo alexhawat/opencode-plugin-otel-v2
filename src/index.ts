@@ -244,6 +244,7 @@ export default {
       endpoint: config.endpoint,
       protocol: config.protocol,
       metricsInterval: config.metricsInterval,
+      metricsTemporality: config.metricsTemporality,
       logsInterval: config.logsInterval,
       metricPrefix: config.metricPrefix,
       headersHelperSet: !!config.otlpHeadersHelper,

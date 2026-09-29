@@ -84,6 +84,7 @@ environment variable, which wins over the default.
 | `resourceAttributes` | `OPENCODE_RESOURCE_ATTRIBUTES` | `key=value,...` resource attributes. |
 | `spanAttributes` | `OPENCODE_SPAN_ATTRIBUTES` | `key=value,...` added to every span/log. |
 | `metricsInterval` / `logsInterval` | `60000` / `5000` | Export intervals (ms). |
+| `metricsTemporality` | `OPENCODE_OTLP_METRICS_TEMPORALITY` / `delta` | `delta`, `cumulative`, or `lowmemory`. Keep `delta` for long-lived hosts: it reports only changes, so an idle process exports nothing. |
 | `metricPrefix` | `OPENCODE_METRIC_PREFIX` / `opencode.` | Metric name prefix. |
 | `logsEnabled` | `!OPENCODE_DISABLE_LOGS` | Emit OTLP log records. |
 | `capturePromptInLogs` | `OPENCODE_CAPTURE_PROMPT_IN_LOGS` | Put the prompt text on the `user_prompt` log. |
@@ -93,6 +94,19 @@ environment variable, which wins over the default.
 | `disabledMetrics` / `disabledTraces` | `OPENCODE_DISABLE_METRICS` / `OPENCODE_DISABLE_TRACES` | Silence by name (`session`, `llm`, `tool` for traces). |
 | `traceparent` / `tracestate` | `OPENCODE_TRACEPARENT` / `OPENCODE_TRACESTATE` | W3C parent for the root. |
 | `tracePropagationProviders` | `OPENCODE_TRACE_PROPAGATION_PROVIDERS` | Providers to inject W3C headers into (`*` = all). |
+
+## Metrics temporality
+
+Metrics default to **delta**. Cumulative snapshots are re-exported every interval for the lifetime
+of the process — even when every session is idle — and the payload grows with each new session and
+attribute set, which can exhaust a backend's ingest quota while OpenCode is not being used. Delta
+reports only the change since the last collection: active periods export, idle periods export
+nothing at all (the SDK skips empty collections). Logfire's metric ingest expects delta.
+
+Override with `metricsTemporality`, `OPENCODE_OTLP_METRICS_TEMPORALITY`, or the standard
+`OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` (in that order of precedence). Only choose
+`cumulative` for short-lived processes. The e2e verification harness asserts that no metric
+exports happen while idle.
 
 ## What it emits
 
