@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.3
+
+- **`project.id` is now deterministic and consistent.** It is `sha1(project.directory)` (40 hex),
+  derived from the same value as `project.name` / `project.directory`, instead of OpenCode's
+  instance-scoped project id (which is `global` for non-git sessions and varied between plugin
+  instances). Every span, log and metric for a session now shares one `project.id`.
+
 ## 0.3.2
 
 - **fix: take `project.name` / `project.directory` / `project.id` from each event's own location.**

@@ -19,6 +19,7 @@ import {
   isTraceEnabled,
   resolveSessionTraceContext,
   setBoundedMap,
+  stableProjectId,
 } from "../util.ts"
 import type { HandlerContext, SessionAgentType } from "../types.ts"
 import { errorSummary, modelRef, type V2Error, type V2Model } from "../v2.ts"
@@ -174,7 +175,6 @@ export function handleSessionCreated(
     agent?: string
     model?: V2Model
     title?: string
-    projectID?: string
     location?: { directory?: string }
   },
   createdAt: number,
@@ -198,7 +198,7 @@ export function handleSessionCreated(
   setBoundedMap(ctx.sessionAttrs, sessionID, {
     ...(ctx.sessionAttrs.get(sessionID) ?? {}),
     ...projectAttrs,
-    ...(data.projectID ? { "project.id": data.projectID } : {}),
+    ...(locationDir ? { "project.id": stableProjectId(locationDir) } : {}),
     ...loadLocationAttrs(locationDir, ctx.locationAttributes),
   })
 

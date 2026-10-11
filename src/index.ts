@@ -24,7 +24,7 @@ import {
   handleToolSuccess,
 } from "./handlers/tool.ts"
 import { handleModelRequest } from "./handlers/chat-headers.ts"
-import { setBoundedMap } from "./util.ts"
+import { setBoundedMap, stableProjectId } from "./util.ts"
 import { redactSecrets } from "./redact.ts"
 import type { V2Event } from "./v2.ts"
 
@@ -269,9 +269,10 @@ export default {
 
     const commonAttrs = {
       ...parseAttributePairs(config.spanAttributes),
-      "project.id": ctx?.location?.project?.id ?? "unknown",
       ...(projectName ? { "project.name": projectName } : {}),
-      ...(projectDirectory ? { "project.directory": projectDirectory } : {}),
+      ...(projectDirectory
+        ? { "project.directory": projectDirectory, "project.id": stableProjectId(projectDirectory) }
+        : {}),
     } as const
 
     const tracing = tracingState()
@@ -402,7 +403,7 @@ export default {
                 ...(tracing.sessionAttrs.get(sid) ?? {}),
                 "project.name": basename(dir),
                 "project.directory": dir,
-                ...(typeof ev.data.projectID === "string" ? { "project.id": ev.data.projectID } : {}),
+                "project.id": stableProjectId(dir),
               })
             }
           }

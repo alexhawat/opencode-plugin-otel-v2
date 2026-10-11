@@ -1,6 +1,12 @@
 import { trace } from "@opentelemetry/api"
+import { createHash } from "node:crypto"
 import { MAX_PENDING } from "./types.ts"
 import type { HandlerContext, SessionAgentType } from "./types.ts"
+
+/** Stable, deterministic project id for a directory (sha1 of the path, 40 hex chars). */
+export function stableProjectId(directory: string): string {
+  return createHash("sha1").update(directory).digest("hex")
+}
 
 const GEN_AI_PROVIDER_NAMES: Readonly<Record<string, string>> = {
   "amazon-bedrock": "aws.bedrock",
@@ -13,8 +19,7 @@ const GEN_AI_PROVIDER_NAMES: Readonly<Record<string, string>> = {
   xai: "x_ai",
 }
 
-/** Returns a human-readable summary string from an opencode error object. */
-export function errorSummary(err: { name: string; data?: unknown } | undefined): string {
+/** Returns a human-readable summary string from an opencode error object. */export function errorSummary(err: { name: string; data?: unknown } | undefined): string {
   if (!err) return "unknown"
   if (err.data && typeof err.data === "object" && "message" in err.data) {
     return `${err.name}: ${(err.data as { message: string }).message}`
