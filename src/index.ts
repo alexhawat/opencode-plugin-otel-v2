@@ -259,11 +259,12 @@ export default {
     const remoteContext = remoteParentContext(config.traceparent, config.tracestate)
     const rootContext = remoteContext ? () => remoteContext : () => ROOT_CONTEXT
 
-    // Human-readable project identity, derived from the session location so it works for
-    // plain checkouts and git worktrees alike (`project.directory` is the repository root
-    // even when the session runs in a linked worktree).
+    // Human-readable project identity as a fallback. Prefer the working directory the session
+    // runs in (its basename) — a folder like ~/code/test reports "test" even when OpenCode's
+    // project root resolves elsewhere (e.g. the home dir, for a non-git folder). Sessions that
+    // emit `session.created` override this per-session from their own location directory.
     const projectDirectory: string | undefined =
-      ctx?.location?.project?.canonical ?? ctx?.location?.project?.directory ?? directory
+      directory ?? ctx?.location?.project?.canonical ?? ctx?.location?.project?.directory
     const projectName = projectDirectory ? basename(projectDirectory) : undefined
 
     const commonAttrs = {

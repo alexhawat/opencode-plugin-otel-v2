@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1
+
+- **fix: identify the project by the session's working directory, not OpenCode's project root.**
+  `project.name` / `project.directory` are now taken from the session's location directory (its
+  basename) and set per session at `session.created`. A non-git folder like `~/code/test` now
+  reports `test` instead of the home directory (where OpenCode's project root falls back for
+  non-git directories). The instance-level attributes remain as a fallback for sessions that
+  predate the plugin.
+
 ## 0.3.0
 
 - **feat: human-readable `project.name` and `project.directory` on every span, log and metric.**

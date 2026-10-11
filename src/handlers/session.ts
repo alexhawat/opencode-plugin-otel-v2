@@ -1,7 +1,7 @@
 import { SeverityNumber } from "@opentelemetry/api-logs"
 import { SpanStatusCode, trace } from "@opentelemetry/api"
 import { readFileSync } from "node:fs"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 import {
   AGENT_NAME,
   INPUT_MIME_TYPE,
@@ -188,7 +188,16 @@ export function handleSessionCreated(
     agent,
     model: data.model ? modelRef(data.model) : (ctx.sessionMeta.get(sessionID)?.model ?? "unknown"),
   })
-  setBoundedMap(ctx.sessionAttrs, sessionID, loadLocationAttrs(data.location?.directory, ctx.locationAttributes))
+  // Identify the project by the session's own working directory (its basename), so a non-git
+  // folder reports its real name instead of OpenCode's project root (often the home dir).
+  const locationDir = data.location?.directory
+  const projectAttrs: Record<string, string> = locationDir
+    ? { "project.name": basename(locationDir), "project.directory": locationDir }
+    : {}
+  setBoundedMap(ctx.sessionAttrs, sessionID, {
+    ...projectAttrs,
+    ...loadLocationAttrs(locationDir, ctx.locationAttributes),
+  })
 
   if (isTraceEnabled("session", ctx) && data.parentID) {
     // Nest under the parent's subagent-dispatch tool span when available, so the whole
