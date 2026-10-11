@@ -174,6 +174,7 @@ export function handleSessionCreated(
     agent?: string
     model?: V2Model
     title?: string
+    projectID?: string
     location?: { directory?: string }
   },
   createdAt: number,
@@ -195,7 +196,9 @@ export function handleSessionCreated(
     ? { "project.name": basename(locationDir), "project.directory": locationDir }
     : {}
   setBoundedMap(ctx.sessionAttrs, sessionID, {
+    ...(ctx.sessionAttrs.get(sessionID) ?? {}),
     ...projectAttrs,
+    ...(data.projectID ? { "project.id": data.projectID } : {}),
     ...loadLocationAttrs(locationDir, ctx.locationAttributes),
   })
 

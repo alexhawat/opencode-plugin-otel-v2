@@ -388,6 +388,24 @@ export default {
               if (oldest) tracing.seenEvents.delete(oldest)
             }
           }
+          // Project identity must come from the event's OWN location, not the plugin instance:
+          // V2 evaluates the plugin once per location and a session's events can be handled by
+          // an instance whose location is elsewhere (e.g. the home dir), which previously made
+          // e.g. `session.execution.succeeded` report the home folder. Set it per session here,
+          // in the same instance that emits the record.
+          {
+            const ev = event as any
+            const sid = ev?.data?.sessionID
+            const dir = ev?.location?.directory
+            if (sid && typeof dir === "string" && dir) {
+              setBoundedMap(tracing.sessionAttrs, sid, {
+                ...(tracing.sessionAttrs.get(sid) ?? {}),
+                "project.name": basename(dir),
+                "project.directory": dir,
+                ...(typeof ev.data.projectID === "string" ? { "project.id": ev.data.projectID } : {}),
+              })
+            }
+          }
           await safe(`event:${event.type}`, async () => {
             switch (event.type) {
               case "session.created":

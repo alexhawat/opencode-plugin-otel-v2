@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.2
+
+- **fix: take `project.name` / `project.directory` / `project.id` from each event's own location.**
+  OpenCode evaluates the plugin once per location and routes a session's events to whichever
+  instance receives them first, so instance-level attributes could be wrong — e.g.
+  `session.execution.succeeded` reporting the home directory while sibling spans reported the real
+  project. The dispatch loop now derives the session's project attributes from the event's
+  `location.directory` (and `projectID` at `session.created`) before the handler runs, so the
+  instance that emits the record always has the correct value.
+
 ## 0.3.1
 
 - **fix: identify the project by the session's working directory, not OpenCode's project root.**
