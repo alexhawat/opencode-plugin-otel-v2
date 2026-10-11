@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- **feat: human-readable `project.name` and `project.directory` on every span, log and metric.**
+  Both are derived from the session location at startup, so no per-repo file is needed. For a git
+  worktree session the repository root is used, so linked worktrees report the parent repo's name
+  rather than the worktree directory. `project.id` (the existing hash) is unchanged.
+
 ## 0.2.0
 
 - **fix: default metrics to `delta` temporality.** Under the SDK default (`cumulative`) every

@@ -122,6 +122,10 @@ exports happen while idle.
 | `session.error` log + error span status | `session.execution.failed` |
 | W3C trace-context header injection | `model.request` hook |
 
+Every span, log and metric also carries a human-readable **`project.name`** and **`project.directory`**,
+derived from the session location at startup (no per-repo file). For a git worktree session the
+repository root is used, so linked worktrees report the parent repository's name.
+
 ## Per-location attributes
 
 Set `locationAttributes` to a location-relative JSON file (default `.opencode/attributes.json`) and

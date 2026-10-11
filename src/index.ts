@@ -2,7 +2,7 @@ import { logs } from "@opentelemetry/api-logs"
 import { diag, DiagLogLevel, ROOT_CONTEXT, trace, type Span } from "@opentelemetry/api"
 import { appendFileSync, mkdirSync, statSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
-import { dirname, join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import { LEVELS, type HandlerContext, type Level } from "./types.ts"
 import { loadConfig, parseAttributePairs, resolveHelperPath, type OtelPluginOptions } from "./config.ts"
 import { probeEndpoint } from "./probe.ts"
@@ -259,9 +259,18 @@ export default {
     const remoteContext = remoteParentContext(config.traceparent, config.tracestate)
     const rootContext = remoteContext ? () => remoteContext : () => ROOT_CONTEXT
 
+    // Human-readable project identity, derived from the session location so it works for
+    // plain checkouts and git worktrees alike (`project.directory` is the repository root
+    // even when the session runs in a linked worktree).
+    const projectDirectory: string | undefined =
+      ctx?.location?.project?.canonical ?? ctx?.location?.project?.directory ?? directory
+    const projectName = projectDirectory ? basename(projectDirectory) : undefined
+
     const commonAttrs = {
       ...parseAttributePairs(config.spanAttributes),
       "project.id": ctx?.location?.project?.id ?? "unknown",
+      ...(projectName ? { "project.name": projectName } : {}),
+      ...(projectDirectory ? { "project.directory": projectDirectory } : {}),
     } as const
 
     const tracing = tracingState()
