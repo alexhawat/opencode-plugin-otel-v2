@@ -127,6 +127,7 @@ if (mode === "full") {
   for (const marker of bodyMarkers) check(!exported.includes(marker), `body ${marker} withheld`);
   for (const key of ["input.value", "output.value", "llm.input_messages"]) check(!spanAttrKeys.has(key), `no ${key} attribute`);
 }
+check(spanAttrKeys.has("gen_ai.cost.estimated_total"), "LLM step carries gen_ai.cost.estimated_total");
 check(spanAttrKeys.has("input.length") === (mode === "metadata"), `input.length ${mode === "metadata" ? "present" : "absent"}`);
 check(spanAttrKeys.has("output.length") === (mode === "metadata"), `output.length ${mode === "metadata" ? "present" : "absent"}`);
 

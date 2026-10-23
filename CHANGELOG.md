@@ -11,6 +11,9 @@
   withholding the bodies.
 - **feat: `disabledMetrics: ["all"]` (or `"*"`) silences every metric**, matching `disabledTraces`.
   Useful when the backend bills OTLP metrics separately and only traces are wanted.
+- **feat: `gen_ai.cost.estimated_total` on LLM step spans**, next to `llm.cost.total`.
+  Datadog LLM Observability reads estimated cost from the `gen_ai.cost.*` namespace and
+  showed no cost for OpenCode sessions without it.
 - verify: `verify/content.ts` asserts which bodies reach spans and logs in each mode.
 
 ## 0.3.3

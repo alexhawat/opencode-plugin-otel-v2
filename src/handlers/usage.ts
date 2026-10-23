@@ -160,7 +160,12 @@ export function handleStepEnded(
           }
         : {}),
       [LLM_FINISH_REASON]: error ? "error" : (data.finish ?? "stop"),
-      ...(typeof data.cost === "number" ? { [LLM_COST_TOTAL]: data.cost } : {}),
+      // Datadog LLM Observability reads estimated cost from `gen_ai.cost.*`, not the
+      // OpenInference `llm.cost.total`; set both on the step span only (never on the
+      // run span), so the cost is counted once.
+      ...(typeof data.cost === "number"
+        ? { [LLM_COST_TOTAL]: data.cost, "gen_ai.cost.estimated_total": data.cost }
+        : {}),
       ...(data.files ? { "session.files_changed": data.files.length } : {}),
     })
     if (error) {
