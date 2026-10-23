@@ -153,3 +153,22 @@ export function contentAttrs(
   if (mode === "metadata") return { [lengthKey]: text.length }
   return build(redact(text))
 }
+
+/** The `gen_ai.provider.name` for spans OpenCode itself produces (sessions, tools). */
+export const OPENCODE_GENAI_PROVIDER = "opencode"
+
+/**
+ * OTel GenAI operation attributes alongside the OpenInference span kind. Backends that
+ * key on GenAI semantic conventions (Datadog LLM Observability) flag a span that has no
+ * `gen_ai.operation.name` and `gen_ai.provider.name` as unidentified instrumentation.
+ */
+export function genAiOperationAttrs(
+  operation: "invoke_agent" | "execute_tool",
+  name: string,
+): Record<string, string> {
+  return {
+    "gen_ai.operation.name": operation,
+    "gen_ai.provider.name": OPENCODE_GENAI_PROVIDER,
+    [operation === "invoke_agent" ? "gen_ai.agent.name" : "gen_ai.tool.name"]: name,
+  }
+}

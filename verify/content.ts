@@ -120,6 +120,16 @@ for (const { path, body } of bodies) {
 }
 
 check(bodies.some((b) => b.path === "/v1/traces"), "spans exported");
+const spans: { name: string; keys: Set<string> }[] = [];
+for (const { path, body } of bodies) {
+  if (path !== "/v1/traces") continue;
+  for (const rs of JSON.parse(body).resourceSpans ?? [])
+    for (const ss of rs.scopeSpans ?? [])
+      for (const span of ss.spans ?? []) spans.push({ name: span.name, keys: new Set((span.attributes ?? []).map((a: any) => a.key)) });
+}
+for (const span of spans) {
+  check(span.keys.has("gen_ai.operation.name") && span.keys.has("gen_ai.provider.name"), `${span.name} carries gen_ai.operation.name + gen_ai.provider.name`);
+}
 const bodyMarkers = [PROMPT, TOOL_INPUT, TOOL_OUTPUT];
 if (mode === "full") {
   for (const marker of bodyMarkers) check(exported.includes(marker), `body ${marker} exported`);

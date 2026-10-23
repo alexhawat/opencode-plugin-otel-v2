@@ -99,6 +99,8 @@ export function handleStepStarted(
       startTime: started,
       attributes: {
         [OPENINFERENCE_SPAN_KIND]: OpenInferenceSpanKind.LLM,
+        "gen_ai.operation.name": "chat",
+        "gen_ai.request.model": modelID,
         [SESSION_ID]: data.sessionID,
         [LLM_SYSTEM]: providerID,
         [LLM_PROVIDER]: providerID,

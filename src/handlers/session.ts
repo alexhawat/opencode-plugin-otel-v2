@@ -13,6 +13,7 @@ import {
   SESSION_ID,
 } from "@arizeai/openinference-semantic-conventions"
 import {
+  genAiOperationAttrs,
   agentAttrs,
   getSessionAgentMeta,
   isMetricEnabled,
@@ -144,6 +145,7 @@ export function handleRunStarted(
       startTime,
       attributes: {
         [OPENINFERENCE_SPAN_KIND]: OpenInferenceSpanKind.AGENT,
+        ...genAiOperationAttrs("invoke_agent", agent),
         [SESSION_ID]: sessionID,
         [AGENT_NAME]: agent,
         "agent.type": agentType,
@@ -211,6 +213,7 @@ export function handleSessionCreated(
         startTime: createdAt,
         attributes: {
           [OPENINFERENCE_SPAN_KIND]: OpenInferenceSpanKind.AGENT,
+          ...genAiOperationAttrs("invoke_agent", agent),
           [SESSION_ID]: sessionID,
           [AGENT_NAME]: agent,
           "agent.type": agentType,

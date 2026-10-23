@@ -14,6 +14,11 @@
 - **feat: `gen_ai.cost.estimated_total` on LLM step spans**, next to `llm.cost.total`.
   Datadog LLM Observability reads estimated cost from the `gen_ai.cost.*` namespace and
   showed no cost for OpenCode sessions without it.
+- **feat: OTel GenAI operation on every span.** Session spans carry
+  `gen_ai.operation.name=invoke_agent`, tool spans `execute_tool` (with `gen_ai.tool.name`) and
+  LLM steps `chat` (with `gen_ai.request.model`), plus `gen_ai.provider.name`, next to the
+  OpenInference span kind. Datadog LLM Observability flagged spans without them as
+  unidentified instrumentation.
 - verify: `verify/content.ts` asserts which bodies reach spans and logs in each mode.
 
 ## 0.3.3

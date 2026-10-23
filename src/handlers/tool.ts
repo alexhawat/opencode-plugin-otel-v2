@@ -9,7 +9,13 @@ import {
   SemanticConventions,
   SESSION_ID,
 } from "@arizeai/openinference-semantic-conventions"
-import { isMetricEnabled, isTraceEnabled, resolveSessionTraceContext, setBoundedMap } from "../util.ts"
+import {
+  genAiOperationAttrs,
+  isMetricEnabled,
+  isTraceEnabled,
+  resolveSessionTraceContext,
+  setBoundedMap,
+} from "../util.ts"
 import type { HandlerContext } from "../types.ts"
 import { errorSummary, type V2Error, type V2ToolContent } from "../v2.ts"
 
@@ -36,6 +42,7 @@ export function handleToolCalled(
       startTime: Date.now(),
       attributes: {
         [OPENINFERENCE_SPAN_KIND]: OpenInferenceSpanKind.TOOL,
+        ...genAiOperationAttrs("execute_tool", tool),
         [SESSION_ID]: data.sessionID,
         [TOOL_NAME]: tool,
         ...ctx.content(JSON.stringify(data.input ?? {}), "input.length", (input) => ({
