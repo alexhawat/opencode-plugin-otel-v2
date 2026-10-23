@@ -38,7 +38,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "verify": "bun run verify/e2e.ts && bun run verify/linking.ts",
+    "verify": "bun run verify/e2e.ts && bun run verify/linking.ts && bun run verify/content.ts full && bun run verify/content.ts metadata && bun run verify/content.ts off",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build"
   },

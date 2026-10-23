@@ -24,7 +24,7 @@ import {
   handleToolSuccess,
 } from "./handlers/tool.ts"
 import { handleModelRequest } from "./handlers/chat-headers.ts"
-import { setBoundedMap, stableProjectId } from "./util.ts"
+import { contentAttrs, setBoundedMap, stableProjectId } from "./util.ts"
 import { redactSecrets } from "./redact.ts"
 import type { V2Event } from "./v2.ts"
 
@@ -276,6 +276,9 @@ export default {
     } as const
 
     const tracing = tracingState()
+    const redact = config.redactSecrets
+      ? (text: string) => redactSecrets(text, config.redactValues)
+      : (text: string) => text
     const hctx: HandlerContext = {
       log,
       emitLog,
@@ -306,10 +309,10 @@ export default {
       stepSpans: tracing.stepSpans,
       llmRequestContexts: tracing.llmRequestContexts,
       tracePropagationProviders: config.tracePropagationProviders,
-      capturePromptInLogs: config.capturePromptInLogs,
-      redact: config.redactSecrets
-        ? (text: string) => redactSecrets(text, config.redactValues)
-        : (text: string) => text,
+      // A prompt body in logs is content too: only `full` lets it through.
+      capturePromptInLogs: config.capturePromptInLogs && config.captureContent === "full",
+      content: (text, lengthKey, build) => contentAttrs(config.captureContent, redact, text, lengthKey, build),
+      redact,
       runPrompts: tracing.runPrompts,
       promptEmitted: tracing.promptEmitted,
     }

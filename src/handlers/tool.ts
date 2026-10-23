@@ -38,8 +38,10 @@ export function handleToolCalled(
         [OPENINFERENCE_SPAN_KIND]: OpenInferenceSpanKind.TOOL,
         [SESSION_ID]: data.sessionID,
         [TOOL_NAME]: tool,
-        [INPUT_VALUE]: ctx.redact(JSON.stringify(data.input ?? {})),
-        [INPUT_MIME_TYPE]: MimeType.JSON,
+        ...ctx.content(JSON.stringify(data.input ?? {}), "input.length", (input) => ({
+          [INPUT_VALUE]: input,
+          [INPUT_MIME_TYPE]: MimeType.JSON,
+        })),
         ...ctx.attrsFor(data.sessionID),
       },
     },
@@ -89,7 +91,9 @@ function finishTool(
       pending.span.setStatus({ code: SpanStatusCode.OK })
     }
     if (output) {
-      pending.span.setAttributes({ [OUTPUT_VALUE]: ctx.redact(output), [OUTPUT_MIME_TYPE]: MimeType.TEXT })
+      pending.span.setAttributes(
+        ctx.content(output, "output.length", (text) => ({ [OUTPUT_VALUE]: text, [OUTPUT_MIME_TYPE]: MimeType.TEXT })),
+      )
     }
     pending.span.end()
   }

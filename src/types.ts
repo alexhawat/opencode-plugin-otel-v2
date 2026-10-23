@@ -111,6 +111,11 @@ export type HandlerContext = {
   llmRequestContexts: Map<string, LlmRequestContext[]>
   tracePropagationProviders: Set<string>
   capturePromptInLogs: boolean
+  /**
+   * Content attributes for one body, honouring `captureContent`: `build(redacted)` under
+   * `full`, `{ [lengthKey]: text.length }` under `metadata`, nothing under `off`.
+   */
+  content: (text: string, lengthKey: string, build: (redacted: string) => Record<string, string>) => Record<string, string | number>
   redact: (text: string) => string
   runPrompts: Map<string, string>
   promptEmitted: Set<string>

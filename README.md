@@ -87,7 +87,8 @@ environment variable, which wins over the default.
 | `metricsTemporality` | `OPENCODE_OTLP_METRICS_TEMPORALITY` / `delta` | `delta`, `cumulative`, or `lowmemory`. Keep `delta` for long-lived hosts: it reports only changes, so an idle process exports nothing. |
 | `metricPrefix` | `OPENCODE_METRIC_PREFIX` / `opencode.` | Metric name prefix. |
 | `logsEnabled` | `!OPENCODE_DISABLE_LOGS` | Emit OTLP log records. |
-| `capturePromptInLogs` | `OPENCODE_CAPTURE_PROMPT_IN_LOGS` | Put the prompt text on the `user_prompt` log. |
+| `capturePromptInLogs` | `OPENCODE_CAPTURE_PROMPT_IN_LOGS` | Put the prompt text on the `user_prompt` log. Only honoured when `captureContent` is `full`. |
+| `captureContent` | `OPENCODE_CAPTURE_CONTENT` / `full` | Prompt and tool bodies on spans: `full` (redacted bodies), `metadata` (character counts only — `input.length`, `output.length`), or `off`. An unrecognised value falls back to `metadata`. |
 | `redactSecrets` | `true` (`!OPENCODE_NO_REDACT`) | Mask credential-shaped strings and known secrets. |
 | `redactValues` | — | Exact values to mask verbatim. |
 | `locationAttributes` | `OPENCODE_LOCATION_ATTRIBUTES` / `.opencode/attributes.json` | Location-relative JSON file of per-session attributes. |

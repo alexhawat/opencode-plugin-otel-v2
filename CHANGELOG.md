@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **feat: `captureContent` option (`OPENCODE_CAPTURE_CONTENT`).** Controls whether prompt text and
+  tool input/output reach exported spans: `full` (the default, unchanged behaviour — bodies after
+  `redactSecrets`), `metadata` (no bodies, only `input.length` / `output.length` character counts),
+  or `off` (neither). The `user_prompt` log's prompt text now also requires `full`. An unrecognised
+  value fails closed to `metadata`. A host that must not export repository content — for example a
+  reviewer running untrusted pull requests — can now keep the LLM/tool span structure while
+  withholding the bodies.
+- verify: `verify/content.ts` asserts which bodies reach spans and logs in each mode.
+
 ## 0.3.3
 
 - **`project.id` is now deterministic and consistent.** It is `sha1(project.directory)` (40 hex),

@@ -2,6 +2,7 @@ import { trace } from "@opentelemetry/api"
 import { createHash } from "node:crypto"
 import { MAX_PENDING } from "./types.ts"
 import type { HandlerContext, SessionAgentType } from "./types.ts"
+import type { ContentCapture } from "./config.ts"
 
 /** Stable, deterministic project id for a directory (sha1 of the path, 40 hex chars). */
 export function stableProjectId(directory: string): string {
@@ -134,4 +135,21 @@ export function agentAttrs(agentName: string, agentType: SessionAgentType | "unk
     "agent.name": agentName,
     "agent.type": agentType,
   } as const
+}
+
+/**
+ * Builds the attributes for one prompt or tool body under a `captureContent` mode:
+ * `build(redact(text))` for `full`, the character count under `lengthKey` for
+ * `metadata`, and nothing for `off`. An empty body adds nothing in any mode.
+ */
+export function contentAttrs(
+  mode: ContentCapture,
+  redact: (text: string) => string,
+  text: string,
+  lengthKey: string,
+  build: (redacted: string) => Record<string, string>,
+): Record<string, string | number> {
+  if (!text || mode === "off") return {}
+  if (mode === "metadata") return { [lengthKey]: text.length }
+  return build(redact(text))
 }

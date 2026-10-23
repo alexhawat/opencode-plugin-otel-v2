@@ -103,6 +103,15 @@ export function ensureSessionTotals(
 }
 
 /** Starts or refreshes the root run span for a single user turn, keyed by the user message ID. */
+/** The run span's prompt attributes under the configured `captureContent` mode. */
+function promptAttrs(promptText: string, ctx: HandlerContext) {
+  return ctx.content(promptText, "input.length", (prompt) => ({
+    [INPUT_VALUE]: prompt,
+    [INPUT_MIME_TYPE]: MimeType.TEXT,
+    [LLM_INPUT_MESSAGES]: JSON.stringify([{ role: "user", content: prompt }]),
+  }))
+}
+
 export function handleRunStarted(
   runID: string,
   sessionID: string,
@@ -113,7 +122,6 @@ export function handleRunStarted(
   ctx: HandlerContext,
 ) {
   ctx.activeRuns.set(sessionID, runID)
-  const safePrompt = ctx.redact(promptText)
   if (!isTraceEnabled("session", ctx)) return
   const totals = ctx.sessionTotals.get(sessionID)
   const agentType: SessionAgentType | "unknown" = totals?.agentType ?? "primary"
@@ -124,13 +132,7 @@ export function handleRunStarted(
       [AGENT_NAME]: agent,
       "agent.type": agentType,
       "session.is_subagent": isSubagent,
-      ...(promptText
-        ? {
-            [INPUT_VALUE]: safePrompt,
-            [INPUT_MIME_TYPE]: MimeType.TEXT,
-            [LLM_INPUT_MESSAGES]: JSON.stringify([{ role: "user", content: safePrompt }]),
-          }
-        : {}),
+      ...promptAttrs(promptText, ctx),
       model,
     })
     return
@@ -146,13 +148,7 @@ export function handleRunStarted(
         [AGENT_NAME]: agent,
         "agent.type": agentType,
         "session.is_subagent": isSubagent,
-        ...(promptText
-          ? {
-              [INPUT_VALUE]: safePrompt,
-              [INPUT_MIME_TYPE]: MimeType.TEXT,
-              [LLM_INPUT_MESSAGES]: JSON.stringify([{ role: "user", content: safePrompt }]),
-            }
-          : {}),
+        ...promptAttrs(promptText, ctx),
         model,
         ...ctx.attrsFor(sessionID),
       },
