@@ -20,7 +20,7 @@ import {
 } from "@arizeai/openinference-semantic-conventions"
 import { agentAttrs, genAiProviderName, isMetricEnabled, isTraceEnabled, resolveSessionTraceContext, setBoundedMap } from "../util.ts"
 import type { HandlerContext } from "../types.ts"
-import { errorSummary, modelRef, totalTokens, type V2Error, type V2Model, type V2Tokens } from "../v2.ts"
+import { modelRef, totalTokens, type V2Error, type V2Model, type V2Tokens } from "../v2.ts"
 
 const OPENINFERENCE_SPAN_KIND = SemanticConventions.OPENINFERENCE_SPAN_KIND
 const LLM_FINISH_REASON = "llm.finish_reason"
@@ -149,29 +149,29 @@ export function handleStepEnded(
   const total = totalTokens(tokens)
   const attrs = { ...ctx.attrsFor(data.sessionID), "session.id": data.sessionID, agent: step?.agent ?? "unknown" }
 
+  // OpenCode reports input without cached tokens and reasoning apart from output.
+  // OpenInference counts are totals with cache and reasoning as breakdowns, so the span
+  // reports the sums; backends otherwise derive a negative uncached input (Datadog).
+  const prompt = tokens ? tokens.input + tokens.cache.read + tokens.cache.write : 0
+  const completion = tokens ? tokens.output + tokens.reasoning : 0
   if (step) {
     step.span.setAttributes({
       ...(tokens
         ? {
-            [LLM_TOKEN_COUNT_PROMPT]: tokens.input,
-            [LLM_TOKEN_COUNT_COMPLETION]: tokens.output,
+            [LLM_TOKEN_COUNT_PROMPT]: prompt,
+            [LLM_TOKEN_COUNT_COMPLETION]: completion,
             [LLM_TOKEN_COUNT_COMPLETION_DETAILS_REASONING]: tokens.reasoning,
             [LLM_TOKEN_COUNT_PROMPT_DETAILS_CACHE_READ]: tokens.cache.read,
             [LLM_TOKEN_COUNT_PROMPT_DETAILS_CACHE_WRITE]: tokens.cache.write,
-            [LLM_TOKEN_COUNT_TOTAL]: total,
+            [LLM_TOKEN_COUNT_TOTAL]: prompt + completion,
           }
         : {}),
       [LLM_FINISH_REASON]: error ? "error" : (data.finish ?? "stop"),
-      // Datadog LLM Observability reads estimated cost from `gen_ai.cost.*`, not the
-      // OpenInference `llm.cost.total`; set both on the step span only (never on the
-      // run span), so the cost is counted once.
-      ...(typeof data.cost === "number"
-        ? { [LLM_COST_TOTAL]: data.cost, "gen_ai.cost.estimated_total": data.cost }
-        : {}),
+      ...(typeof data.cost === "number" ? { [LLM_COST_TOTAL]: data.cost } : {}),
       ...(data.files ? { "session.files_changed": data.files.length } : {}),
     })
     if (error) {
-      step.span.setStatus({ code: SpanStatusCode.ERROR, message: errorSummary(error) })
+      step.span.setStatus({ code: SpanStatusCode.ERROR, message: ctx.errorText(error) })
     } else {
       step.span.setStatus({ code: SpanStatusCode.OK })
     }

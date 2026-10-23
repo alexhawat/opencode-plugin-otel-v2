@@ -42,6 +42,8 @@ delete process.env.OPENCODE_CAPTURE_CONTENT;
 const PROMPT = "verify-prompt-body-7f3a";
 const TOOL_INPUT = "verify-tool-input-91c2";
 const TOOL_OUTPUT = "verify-tool-output-c0d4";
+// Error messages can carry commands, stderr or repository text: the same cap applies.
+const ERROR_TEXT = "verify-error-message-e55a";
 const bodies: { path: string; body: string }[] = [];
 const server = Bun.serve({
   port: 0,
@@ -100,8 +102,14 @@ events.push(
   { type: "session.tool.input.started", created: Date.now(), data: { sessionID: ses, assistantMessageID: "msg_1", id: "call_1", name: "shell" } },
   { type: "session.tool.called", created: Date.now(), data: { sessionID: ses, assistantMessageID: "msg_1", id: "call_1", input: { command: TOOL_INPUT }, executed: false } },
   { type: "session.tool.success", created: Date.now(), data: { sessionID: ses, assistantMessageID: "msg_1", id: "call_1", content: [{ type: "text", text: TOOL_OUTPUT }], metadata: { status: "completed" }, executed: false } },
-  { type: "session.step.ended", created: Date.now(), data: { sessionID: ses, assistantMessageID: "msg_1", finish: "stop", cost: 0.001, tokens: { input: 10, output: 2, reasoning: 0, cache: { read: 0, write: 0 } } } },
-  { type: "session.execution.succeeded", created: Date.now(), data: { sessionID: ses } },
+  { type: "session.tool.input.started", created: Date.now(), data: { sessionID: ses, assistantMessageID: "msg_1", id: "call_2", name: "shell" } },
+  { type: "session.tool.called", created: Date.now(), data: { sessionID: ses, assistantMessageID: "msg_1", id: "call_2", input: { command: "false" }, executed: false } },
+  { type: "session.tool.failed", created: Date.now(), data: { sessionID: ses, assistantMessageID: "msg_1", id: "call_2", error: { type: "ToolError", message: ERROR_TEXT } } },
+  // OpenCode reports input without cache and reasoning apart from output.
+  { type: "session.step.ended", created: Date.now(), data: { sessionID: ses, assistantMessageID: "msg_1", finish: "stop", cost: 0.001, tokens: { input: 10, output: 2, reasoning: 3, cache: { read: 500, write: 7 } } } },
+  { type: "session.step.started", created: Date.now(), data: { sessionID: ses, assistantMessageID: "msg_2", agent: "build", model, started: Date.now() } },
+  { type: "session.step.failed", created: Date.now(), data: { sessionID: ses, assistantMessageID: "msg_2", error: { type: "ProviderError", message: ERROR_TEXT } } },
+  { type: "session.execution.failed", created: Date.now(), data: { sessionID: ses, error: { type: "ExecutionError", message: ERROR_TEXT } } },
 );
 
 streamDone = true;
@@ -120,12 +128,15 @@ for (const { path, body } of bodies) {
 }
 
 check(bodies.some((b) => b.path === "/v1/traces"), "spans exported");
-const spans: { name: string; keys: Set<string> }[] = [];
+const spans: { name: string; keys: Set<string>; attrs: Record<string, unknown> }[] = [];
 for (const { path, body } of bodies) {
   if (path !== "/v1/traces") continue;
   for (const rs of JSON.parse(body).resourceSpans ?? [])
     for (const ss of rs.scopeSpans ?? [])
-      for (const span of ss.spans ?? []) spans.push({ name: span.name, keys: new Set((span.attributes ?? []).map((a: any) => a.key)) });
+      for (const span of ss.spans ?? []) {
+        const attrs = Object.fromEntries((span.attributes ?? []).map((a: any) => [a.key, a.value?.intValue ?? a.value?.stringValue ?? a.value?.doubleValue]));
+        spans.push({ name: span.name, keys: new Set(Object.keys(attrs)), attrs });
+      }
 }
 for (const span of spans) {
   check(span.keys.has("gen_ai.operation.name") && span.keys.has("gen_ai.provider.name"), `${span.name} carries gen_ai.operation.name + gen_ai.provider.name`);
@@ -137,7 +148,18 @@ if (mode === "full") {
   for (const marker of bodyMarkers) check(!exported.includes(marker), `body ${marker} withheld`);
   for (const key of ["input.value", "output.value", "llm.input_messages"]) check(!spanAttrKeys.has(key), `no ${key} attribute`);
 }
-check(spanAttrKeys.has("gen_ai.cost.estimated_total"), "LLM step carries gen_ai.cost.estimated_total");
+const errorTypes = ["ToolError", "ProviderError", "ExecutionError"];
+if (mode === "full") {
+  check(exported.includes(ERROR_TEXT), "error message exported");
+} else {
+  check(!exported.includes(ERROR_TEXT), "error message withheld from spans and logs");
+  for (const type of errorTypes) check(exported.includes(type), `error type ${type} kept`);
+}
+// Prompt and completion totals include their cache and reasoning breakdowns.
+const step = spans.find((s) => s.name.endsWith("llm") && s.attrs["llm.token_count.prompt_details.cache_read"] !== undefined);
+check(Number(step?.attrs["llm.token_count.prompt"]) === 517, "prompt tokens include cache read + write");
+check(Number(step?.attrs["llm.token_count.completion"]) === 5, "completion tokens include reasoning");
+check(Number(step?.attrs["llm.token_count.total"]) === 522, "total tokens = prompt + completion");
 check(spanAttrKeys.has("input.length") === (mode === "metadata"), `input.length ${mode === "metadata" ? "present" : "absent"}`);
 check(spanAttrKeys.has("output.length") === (mode === "metadata"), `output.length ${mode === "metadata" ? "present" : "absent"}`);
 

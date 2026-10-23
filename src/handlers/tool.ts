@@ -17,7 +17,7 @@ import {
   setBoundedMap,
 } from "../util.ts"
 import type { HandlerContext } from "../types.ts"
-import { errorSummary, type V2Error, type V2ToolContent } from "../v2.ts"
+import type { V2Error, V2ToolContent } from "../v2.ts"
 
 const OPENINFERENCE_SPAN_KIND = SemanticConventions.OPENINFERENCE_SPAN_KIND
 const TOOL_NAME = "tool.name"
@@ -92,8 +92,8 @@ function finishTool(
   const output = content?.map((part) => (part.type === "text" ? part.text : part.uri)).join("\n")
   if (pending?.span) {
     if (error) {
-      pending.span.setStatus({ code: SpanStatusCode.ERROR, message: errorSummary(error) })
-      pending.span.setAttribute("error", errorSummary(error))
+      pending.span.setStatus({ code: SpanStatusCode.ERROR, message: ctx.errorText(error) })
+      pending.span.setAttribute("error", ctx.errorText(error))
     } else {
       pending.span.setStatus({ code: SpanStatusCode.OK })
     }

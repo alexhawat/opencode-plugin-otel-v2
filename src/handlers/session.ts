@@ -23,7 +23,7 @@ import {
   stableProjectId,
 } from "../util.ts"
 import type { HandlerContext, SessionAgentType } from "../types.ts"
-import { errorSummary, modelRef, type V2Error, type V2Model } from "../v2.ts"
+import { modelRef, type V2Error, type V2Model } from "../v2.ts"
 
 const OPENINFERENCE_SPAN_KIND = SemanticConventions.OPENINFERENCE_SPAN_KIND
 
@@ -325,8 +325,8 @@ export function handleExecutionEnded(
   const sessionID = data.sessionID
   const totals = ctx.sessionTotals.get(sessionID)
   const { agentName, agentType } = getSessionAgentMeta(sessionID, ctx)
-  endRunSpan(sessionID, ctx, error ? errorSummary(error) : undefined)
-  endSessionSpan(sessionID, ctx, error ? errorSummary(error) : undefined)
+  endRunSpan(sessionID, ctx, error ? ctx.errorText(error) : undefined)
+  endSessionSpan(sessionID, ctx, error ? ctx.errorText(error) : undefined)
   // Clear per-turn state so the next turn starts a fresh run span and prompt log.
   ctx.promptEmitted.delete(sessionID)
   ctx.runPrompts.delete(sessionID)
@@ -353,7 +353,7 @@ export function handleExecutionEnded(
     attributes: {
       "event.name": error ? "session.error" : "session.execution.succeeded",
       "session.id": sessionID,
-      ...(error ? { error: errorSummary(error) } : {}),
+      ...(error ? { error: ctx.errorText(error) } : {}),
       total_tokens: totals?.tokens ?? 0,
       total_cost_usd: totals?.cost ?? 0,
       total_messages: totals?.messages ?? 0,
@@ -364,7 +364,7 @@ export function handleExecutionEnded(
   ctx.log(error ? "error" : "debug", error ? "otel: session.execution.failed" : "otel: session.execution.succeeded", {
     sessionID,
     reason: data.reason,
-    ...(error ? { error: errorSummary(error) } : {}),
+    ...(error ? { error: ctx.errorText(error) } : {}),
   })
 }
 

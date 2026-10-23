@@ -172,3 +172,34 @@ export function genAiOperationAttrs(
     [operation === "invoke_agent" ? "gen_ai.agent.name" : "gen_ai.tool.name"]: name,
   }
 }
+
+const CAPTURE_RANK: Record<ContentCapture, number> = { off: 0, metadata: 1, full: 2 }
+
+/**
+ * The most restrictive of the capture modes registered by live plugin instances.
+ *
+ * OpenCode evaluates the plugin once per location, and the instances share one event
+ * stream and dedupe events across each other, so whichever instance sees an event first
+ * exports it. A stricter location's bodies would leak through a `full` instance unless
+ * every instance applies the strictest mode in force. No registered mode means `full`.
+ */
+export function strictestCapture(modes: Iterable<ContentCapture>): ContentCapture {
+  let strictest: ContentCapture = "full"
+  for (const mode of modes) if (CAPTURE_RANK[mode] < CAPTURE_RANK[strictest]) strictest = mode
+  return strictest
+}
+
+/**
+ * An error's text under a capture mode. Error messages can carry commands, stderr or
+ * repository text, so outside `full` only the structured error type is exported; under
+ * `full` the message is kept but redacted.
+ */
+export function errorText(
+  mode: ContentCapture,
+  redact: (text: string) => string,
+  error: { type: string; message?: string } | undefined,
+): string {
+  if (!error) return "unknown"
+  if (mode !== "full") return error.type
+  return redact(error.message ? `${error.type}: ${error.message}` : error.type)
+}
