@@ -20,6 +20,9 @@ export const TRACE_TYPES = ["session", "llm", "tool"] as const
 const VALID_TEMPORALITIES: ReadonlySet<MetricsTemporality> = new Set<MetricsTemporality>(["cumulative", "delta", "lowmemory"])
 const TRACE_DISABLE_ALL_VALUES = new Set(["all", "*", "true", "1"])
 
+/** Sentinel in `disabledMetrics` that disables every metric. */
+export const ALL_METRICS = "*"
+
 /** Configuration values resolved from `OPENCODE_*` environment variables. */
 export type PluginConfig = {
   enabled: boolean
@@ -117,6 +120,15 @@ function pickProtocol(value: unknown): PluginConfig["protocol"] | undefined {
   return typeof value === "string" && VALID_PROTOCOLS.has(value as PluginConfig["protocol"])
     ? (value as PluginConfig["protocol"])
     : undefined
+}
+
+/**
+ * Disabled metric names; `all` / `*` / `true` / `1` collapse to {@link ALL_METRICS},
+ * which {@link isMetricEnabled} treats as every metric.
+ */
+function expandDisabledMetrics(values: string[]): Set<string> {
+  if (values.some(value => TRACE_DISABLE_ALL_VALUES.has(value))) return new Set([ALL_METRICS])
+  return new Set(values)
 }
 
 /**
@@ -225,7 +237,7 @@ export function loadConfig(options: OtelPluginOptions = {}): PluginConfig {
   if (resourceAttributes) process.env["OTEL_RESOURCE_ATTRIBUTES"] = resourceAttributes
 
   const optionMetrics = pickStringList(resolvedOptions.disabledMetrics)
-  const disabledMetrics = new Set(
+  const disabledMetrics = expandDisabledMetrics(
     optionMetrics ? normalizeList(optionMetrics) : splitList(process.env["OPENCODE_DISABLE_METRICS"]),
   )
 

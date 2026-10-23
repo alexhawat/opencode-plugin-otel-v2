@@ -92,7 +92,7 @@ environment variable, which wins over the default.
 | `redactSecrets` | `true` (`!OPENCODE_NO_REDACT`) | Mask credential-shaped strings and known secrets. |
 | `redactValues` | — | Exact values to mask verbatim. |
 | `locationAttributes` | `OPENCODE_LOCATION_ATTRIBUTES` / `.opencode/attributes.json` | Location-relative JSON file of per-session attributes. |
-| `disabledMetrics` / `disabledTraces` | `OPENCODE_DISABLE_METRICS` / `OPENCODE_DISABLE_TRACES` | Silence by name (`session`, `llm`, `tool` for traces). |
+| `disabledMetrics` / `disabledTraces` | `OPENCODE_DISABLE_METRICS` / `OPENCODE_DISABLE_TRACES` | Silence by name (`session`, `llm`, `tool` for traces); `all` or `*` silences every metric or trace. |
 | `traceparent` / `tracestate` | `OPENCODE_TRACEPARENT` / `OPENCODE_TRACESTATE` | W3C parent for the root. |
 | `tracePropagationProviders` | `OPENCODE_TRACE_PROPAGATION_PROVIDERS` | Providers to inject W3C headers into (`*` = all). |
 

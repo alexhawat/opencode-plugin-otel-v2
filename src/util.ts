@@ -2,7 +2,7 @@ import { trace } from "@opentelemetry/api"
 import { createHash } from "node:crypto"
 import { MAX_PENDING } from "./types.ts"
 import type { HandlerContext, SessionAgentType } from "./types.ts"
-import type { ContentCapture } from "./config.ts"
+import { ALL_METRICS, type ContentCapture } from "./config.ts"
 
 /** Stable, deterministic project id for a directory (sha1 of the path, 40 hex chars). */
 export function stableProjectId(directory: string): string {
@@ -82,7 +82,7 @@ export function resolveSessionTraceContext(
  * The `name` should be the suffix after the metric prefix, e.g. `"session.count"`.
  */
 export function isMetricEnabled(name: string, ctx: { disabledMetrics: Set<string> }): boolean {
-  return !ctx.disabledMetrics.has(name)
+  return !ctx.disabledMetrics.has(ALL_METRICS) && !ctx.disabledMetrics.has(name)
 }
 
 /**

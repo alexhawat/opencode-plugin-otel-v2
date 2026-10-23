@@ -5,7 +5,7 @@
 //
 // One mode per process: the plugin shares its OTel providers on `globalThis`, so a
 // second setup in the same process would reuse the first mode's exporters.
-import { contentAttrs } from "../src/util.ts";
+import { contentAttrs, isMetricEnabled } from "../src/util.ts";
 import { loadConfig } from "../src/config.ts";
 
 const mode = process.argv[2] as "full" | "metadata" | "off";
@@ -29,6 +29,11 @@ check(JSON.stringify(contentAttrs(mode, upper, "", "input.length", build)) === "
 check(loadConfig({ captureContent: mode }).captureContent === mode, "option resolves");
 check(loadConfig({}).captureContent === "full", "default is full");
 check(loadConfig({ captureContent: "everything" as never }).captureContent === "metadata", "invalid value fails closed to metadata");
+for (const all of ["all", "*"]) {
+  const disabled = loadConfig({ disabledMetrics: [all] }).disabledMetrics;
+  check(!isMetricEnabled("token.usage", { disabledMetrics: disabled }), `disabledMetrics ["${all}"] disables every metric`);
+}
+check(isMetricEnabled("token.usage", loadConfig({ disabledMetrics: ["cost.usage"] })), "named disable leaves others on");
 process.env.OPENCODE_CAPTURE_CONTENT = mode;
 check(loadConfig({}).captureContent === mode, "OPENCODE_CAPTURE_CONTENT resolves");
 delete process.env.OPENCODE_CAPTURE_CONTENT;

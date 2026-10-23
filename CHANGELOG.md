@@ -9,6 +9,8 @@
   value fails closed to `metadata`. A host that must not export repository content — for example a
   reviewer running untrusted pull requests — can now keep the LLM/tool span structure while
   withholding the bodies.
+- **feat: `disabledMetrics: ["all"]` (or `"*"`) silences every metric**, matching `disabledTraces`.
+  Useful when the backend bills OTLP metrics separately and only traces are wanted.
 - verify: `verify/content.ts` asserts which bodies reach spans and logs in each mode.
 
 ## 0.3.3
