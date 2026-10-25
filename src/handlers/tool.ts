@@ -9,9 +9,15 @@ import {
   SemanticConventions,
   SESSION_ID,
 } from "@arizeai/openinference-semantic-conventions"
-import { isMetricEnabled, isTraceEnabled, resolveSessionTraceContext, setBoundedMap } from "../util.ts"
+import {
+  genAiOperationAttrs,
+  isMetricEnabled,
+  isTraceEnabled,
+  resolveSessionTraceContext,
+  setBoundedMap,
+} from "../util.ts"
 import type { HandlerContext } from "../types.ts"
-import { errorSummary, type V2Error, type V2ToolContent } from "../v2.ts"
+import type { V2Error, V2ToolContent } from "../v2.ts"
 
 const OPENINFERENCE_SPAN_KIND = SemanticConventions.OPENINFERENCE_SPAN_KIND
 const TOOL_NAME = "tool.name"
@@ -36,10 +42,13 @@ export function handleToolCalled(
       startTime: Date.now(),
       attributes: {
         [OPENINFERENCE_SPAN_KIND]: OpenInferenceSpanKind.TOOL,
+        ...genAiOperationAttrs("execute_tool", tool),
         [SESSION_ID]: data.sessionID,
         [TOOL_NAME]: tool,
-        [INPUT_VALUE]: ctx.redact(JSON.stringify(data.input ?? {})),
-        [INPUT_MIME_TYPE]: MimeType.JSON,
+        ...ctx.content(JSON.stringify(data.input ?? {}), "input.length", (input) => ({
+          [INPUT_VALUE]: input,
+          [INPUT_MIME_TYPE]: MimeType.JSON,
+        })),
         ...ctx.attrsFor(data.sessionID),
       },
     },
@@ -83,13 +92,15 @@ function finishTool(
   const output = content?.map((part) => (part.type === "text" ? part.text : part.uri)).join("\n")
   if (pending?.span) {
     if (error) {
-      pending.span.setStatus({ code: SpanStatusCode.ERROR, message: errorSummary(error) })
-      pending.span.setAttribute("error", errorSummary(error))
+      pending.span.setStatus({ code: SpanStatusCode.ERROR, message: ctx.errorText(error) })
+      pending.span.setAttribute("error", ctx.errorText(error))
     } else {
       pending.span.setStatus({ code: SpanStatusCode.OK })
     }
     if (output) {
-      pending.span.setAttributes({ [OUTPUT_VALUE]: ctx.redact(output), [OUTPUT_MIME_TYPE]: MimeType.TEXT })
+      pending.span.setAttributes(
+        ctx.content(output, "output.length", (text) => ({ [OUTPUT_VALUE]: text, [OUTPUT_MIME_TYPE]: MimeType.TEXT })),
+      )
     }
     pending.span.end()
   }

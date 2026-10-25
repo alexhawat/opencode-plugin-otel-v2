@@ -87,11 +87,12 @@ environment variable, which wins over the default.
 | `metricsTemporality` | `OPENCODE_OTLP_METRICS_TEMPORALITY` / `delta` | `delta`, `cumulative`, or `lowmemory`. Keep `delta` for long-lived hosts: it reports only changes, so an idle process exports nothing. |
 | `metricPrefix` | `OPENCODE_METRIC_PREFIX` / `opencode.` | Metric name prefix. |
 | `logsEnabled` | `!OPENCODE_DISABLE_LOGS` | Emit OTLP log records. |
-| `capturePromptInLogs` | `OPENCODE_CAPTURE_PROMPT_IN_LOGS` | Put the prompt text on the `user_prompt` log. |
+| `capturePromptInLogs` | `OPENCODE_CAPTURE_PROMPT_IN_LOGS` | Put the prompt text on the `user_prompt` log. Only honoured when `captureContent` is `full`. |
+| `captureContent` | `OPENCODE_CAPTURE_CONTENT` / `full` | Prompt, tool and error bodies on spans and logs: `full` (redacted bodies), `metadata` (character counts only — `input.length`, `output.length` — and the error type without its message), or `off`. When several plugin instances share a process (one per location), all apply the strictest mode any of them sets. An unrecognised value falls back to `metadata`. |
 | `redactSecrets` | `true` (`!OPENCODE_NO_REDACT`) | Mask credential-shaped strings and known secrets. |
 | `redactValues` | — | Exact values to mask verbatim. |
 | `locationAttributes` | `OPENCODE_LOCATION_ATTRIBUTES` / `.opencode/attributes.json` | Location-relative JSON file of per-session attributes. |
-| `disabledMetrics` / `disabledTraces` | `OPENCODE_DISABLE_METRICS` / `OPENCODE_DISABLE_TRACES` | Silence by name (`session`, `llm`, `tool` for traces). |
+| `disabledMetrics` / `disabledTraces` | `OPENCODE_DISABLE_METRICS` / `OPENCODE_DISABLE_TRACES` | Silence by name (`session`, `llm`, `tool` for traces); `all` or `*` silences every metric or trace. |
 | `traceparent` / `tracestate` | `OPENCODE_TRACEPARENT` / `OPENCODE_TRACESTATE` | W3C parent for the root. |
 | `tracePropagationProviders` | `OPENCODE_TRACE_PROPAGATION_PROVIDERS` | Providers to inject W3C headers into (`*` = all). |
 

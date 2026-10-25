@@ -3,17 +3,32 @@ import { LEVELS, type Level } from "./types.ts"
 /** Accepted values for `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE`. */
 export type MetricsTemporality = "cumulative" | "delta" | "lowmemory"
 
+/**
+ * How much prompt and tool content reaches exported spans and logs.
+ *
+ * - `full`: prompt text and tool input/output, after `redactSecrets` (the default).
+ * - `metadata`: no bodies; only their character counts (`input.length`, `output.length`).
+ * - `off`: no bodies and no counts.
+ */
+export type ContentCapture = "full" | "metadata" | "off"
+
+const VALID_CONTENT_CAPTURES: ReadonlySet<ContentCapture> = new Set<ContentCapture>(["full", "metadata", "off"])
+
 /** Valid trace types emitted by the plugin. */
 export const TRACE_TYPES = ["session", "llm", "tool"] as const
 
 const VALID_TEMPORALITIES: ReadonlySet<MetricsTemporality> = new Set<MetricsTemporality>(["cumulative", "delta", "lowmemory"])
 const TRACE_DISABLE_ALL_VALUES = new Set(["all", "*", "true", "1"])
 
+/** Sentinel in `disabledMetrics` that disables every metric. */
+export const ALL_METRICS = "*"
+
 /** Configuration values resolved from `OPENCODE_*` environment variables. */
 export type PluginConfig = {
   enabled: boolean
   logsEnabled: boolean
   capturePromptInLogs: boolean
+  captureContent: ContentCapture
   endpoint: string
   protocol: "grpc" | "http/protobuf" | "http/json"
   metricsInterval: number
@@ -61,6 +76,7 @@ export type OtelPluginOptions = {
   enabled?: boolean
   logsEnabled?: boolean
   capturePromptInLogs?: boolean
+  captureContent?: ContentCapture
   endpoint?: string
   protocol?: "grpc" | "http/protobuf" | "http/json"
   metricsInterval?: number
@@ -104,6 +120,32 @@ function pickProtocol(value: unknown): PluginConfig["protocol"] | undefined {
   return typeof value === "string" && VALID_PROTOCOLS.has(value as PluginConfig["protocol"])
     ? (value as PluginConfig["protocol"])
     : undefined
+}
+
+/**
+ * Disabled metric names; `all` / `*` / `true` / `1` collapse to {@link ALL_METRICS},
+ * which {@link isMetricEnabled} treats as every metric.
+ */
+function expandDisabledMetrics(values: string[]): Set<string> {
+  if (values.some(value => TRACE_DISABLE_ALL_VALUES.has(value))) return new Set([ALL_METRICS])
+  return new Set(values)
+}
+
+/**
+ * Resolves `captureContent` from the option, then `OPENCODE_CAPTURE_CONTENT`, then `full`.
+ * A value that is set but unrecognised fails closed to `metadata` (with a warning), so a
+ * typo never exports bodies the operator meant to withhold.
+ */
+function resolveContentCapture(option: unknown): ContentCapture {
+  const raw = option !== undefined ? option : process.env["OPENCODE_CAPTURE_CONTENT"]
+  if (raw === undefined || raw === "") return "full"
+  const normalized = typeof raw === "string" ? raw.trim().toLowerCase() : ""
+  if (VALID_CONTENT_CAPTURES.has(normalized as ContentCapture)) return normalized as ContentCapture
+  console.warn(
+    `[opencode-plugin-otel] Invalid captureContent "${String(raw)}". ` +
+      `Expected one of: full, metadata, off. Using "metadata".`,
+  )
+  return "metadata"
 }
 
 function pickMetricsTemporality(value: unknown): MetricsTemporality | undefined {
@@ -195,7 +237,7 @@ export function loadConfig(options: OtelPluginOptions = {}): PluginConfig {
   if (resourceAttributes) process.env["OTEL_RESOURCE_ATTRIBUTES"] = resourceAttributes
 
   const optionMetrics = pickStringList(resolvedOptions.disabledMetrics)
-  const disabledMetrics = new Set(
+  const disabledMetrics = expandDisabledMetrics(
     optionMetrics ? normalizeList(optionMetrics) : splitList(process.env["OPENCODE_DISABLE_METRICS"]),
   )
 
@@ -213,6 +255,7 @@ export function loadConfig(options: OtelPluginOptions = {}): PluginConfig {
     enabled: pickBoolean(resolvedOptions.enabled) ?? hasNonEmptyEnv("OPENCODE_ENABLE_TELEMETRY"),
     logsEnabled: pickBoolean(resolvedOptions.logsEnabled) ?? !hasNonEmptyEnv("OPENCODE_DISABLE_LOGS"),
     capturePromptInLogs: pickBoolean(resolvedOptions.capturePromptInLogs) ?? hasNonEmptyEnv("OPENCODE_CAPTURE_PROMPT_IN_LOGS"),
+    captureContent: resolveContentCapture(resolvedOptions.captureContent),
     endpoint: pickString(resolvedOptions.endpoint) ?? process.env["OPENCODE_OTLP_ENDPOINT"] ?? "http://localhost:4317",
     protocol,
     metricsInterval: pickPositiveInt(resolvedOptions.metricsInterval) ?? parseEnvInt("OPENCODE_OTLP_METRICS_INTERVAL", 60000),

@@ -4,7 +4,7 @@ import { appendFileSync, mkdirSync, statSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { basename, dirname, join } from "node:path"
 import { LEVELS, type HandlerContext, type Level } from "./types.ts"
-import { loadConfig, parseAttributePairs, resolveHelperPath, type OtelPluginOptions } from "./config.ts"
+import { loadConfig, parseAttributePairs, resolveHelperPath, type ContentCapture, type OtelPluginOptions } from "./config.ts"
 import { probeEndpoint } from "./probe.ts"
 import { createInstruments, forceFlushOtel, setupOtel, type OtelProviders } from "./otel.ts"
 import { remoteParentContext } from "./trace-context.ts"
@@ -24,7 +24,7 @@ import {
   handleToolSuccess,
 } from "./handlers/tool.ts"
 import { handleModelRequest } from "./handlers/chat-headers.ts"
-import { setBoundedMap, stableProjectId } from "./util.ts"
+import { contentAttrs, errorText, setBoundedMap, stableProjectId, strictestCapture } from "./util.ts"
 import { redactSecrets } from "./redact.ts"
 import type { V2Event } from "./v2.ts"
 
@@ -80,6 +80,8 @@ const TRACING_KEY = "__opencode_otel_tracing_v1__"
 
 type TracingState = {
   seenEvents: Set<string>
+  /** Capture mode per live plugin instance; every instance applies the strictest. */
+  captureModes: Map<symbol, ContentCapture>
   pendingSubagentSpans: Map<string, Span>
   runPrompts: Map<string, string>
   promptEmitted: Set<string>
@@ -101,6 +103,7 @@ type TracingState = {
 function emptyTracing(): TracingState {
   return {
     seenEvents: new Set(),
+    captureModes: new Map(),
     pendingSubagentSpans: new Map(),
     runPrompts: new Map(),
     promptEmitted: new Set(),
@@ -276,6 +279,12 @@ export default {
     } as const
 
     const tracing = tracingState()
+    const redact = config.redactSecrets
+      ? (text: string) => redactSecrets(text, config.redactValues)
+      : (text: string) => text
+    const instanceKey = Symbol("otel-plugin-instance")
+    tracing.captureModes.set(instanceKey, config.captureContent)
+    const capture = () => strictestCapture(tracing.captureModes.values())
     const hctx: HandlerContext = {
       log,
       emitLog,
@@ -306,10 +315,14 @@ export default {
       stepSpans: tracing.stepSpans,
       llmRequestContexts: tracing.llmRequestContexts,
       tracePropagationProviders: config.tracePropagationProviders,
-      capturePromptInLogs: config.capturePromptInLogs,
-      redact: config.redactSecrets
-        ? (text: string) => redactSecrets(text, config.redactValues)
-        : (text: string) => text,
+      // A prompt body in logs is content too: only `full` lets it through. The mode is
+      // the strictest of all live instances, read per event (see strictestCapture).
+      get capturePromptInLogs() {
+        return config.capturePromptInLogs && capture() === "full"
+      },
+      content: (text, lengthKey, build) => contentAttrs(capture(), redact, text, lengthKey, build),
+      errorText: (error) => errorText(capture(), redact, error),
+      redact,
       runPrompts: tracing.runPrompts,
       promptEmitted: tracing.promptEmitted,
     }
@@ -475,6 +488,7 @@ export default {
 
     return async () => {
       controller.abort()
+      tracing.captureModes.delete(instanceKey)
       await releaseOtel()
     }
   },

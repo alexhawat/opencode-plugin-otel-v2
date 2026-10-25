@@ -2,6 +2,7 @@ import { trace } from "@opentelemetry/api"
 import { createHash } from "node:crypto"
 import { MAX_PENDING } from "./types.ts"
 import type { HandlerContext, SessionAgentType } from "./types.ts"
+import { ALL_METRICS, type ContentCapture } from "./config.ts"
 
 /** Stable, deterministic project id for a directory (sha1 of the path, 40 hex chars). */
 export function stableProjectId(directory: string): string {
@@ -81,7 +82,7 @@ export function resolveSessionTraceContext(
  * The `name` should be the suffix after the metric prefix, e.g. `"session.count"`.
  */
 export function isMetricEnabled(name: string, ctx: { disabledMetrics: Set<string> }): boolean {
-  return !ctx.disabledMetrics.has(name)
+  return !ctx.disabledMetrics.has(ALL_METRICS) && !ctx.disabledMetrics.has(name)
 }
 
 /**
@@ -134,4 +135,71 @@ export function agentAttrs(agentName: string, agentType: SessionAgentType | "unk
     "agent.name": agentName,
     "agent.type": agentType,
   } as const
+}
+
+/**
+ * Builds the attributes for one prompt or tool body under a `captureContent` mode:
+ * `build(redact(text))` for `full`, the character count under `lengthKey` for
+ * `metadata`, and nothing for `off`. An empty body adds nothing in any mode.
+ */
+export function contentAttrs(
+  mode: ContentCapture,
+  redact: (text: string) => string,
+  text: string,
+  lengthKey: string,
+  build: (redacted: string) => Record<string, string>,
+): Record<string, string | number> {
+  if (!text || mode === "off") return {}
+  if (mode === "metadata") return { [lengthKey]: text.length }
+  return build(redact(text))
+}
+
+/** The `gen_ai.provider.name` for spans OpenCode itself produces (sessions, tools). */
+export const OPENCODE_GENAI_PROVIDER = "opencode"
+
+/**
+ * OTel GenAI operation attributes alongside the OpenInference span kind. Backends that
+ * key on GenAI semantic conventions (Datadog LLM Observability) flag a span that has no
+ * `gen_ai.operation.name` and `gen_ai.provider.name` as unidentified instrumentation.
+ */
+export function genAiOperationAttrs(
+  operation: "invoke_agent" | "execute_tool",
+  name: string,
+): Record<string, string> {
+  return {
+    "gen_ai.operation.name": operation,
+    "gen_ai.provider.name": OPENCODE_GENAI_PROVIDER,
+    [operation === "invoke_agent" ? "gen_ai.agent.name" : "gen_ai.tool.name"]: name,
+  }
+}
+
+const CAPTURE_RANK: Record<ContentCapture, number> = { off: 0, metadata: 1, full: 2 }
+
+/**
+ * The most restrictive of the capture modes registered by live plugin instances.
+ *
+ * OpenCode evaluates the plugin once per location, and the instances share one event
+ * stream and dedupe events across each other, so whichever instance sees an event first
+ * exports it. A stricter location's bodies would leak through a `full` instance unless
+ * every instance applies the strictest mode in force. No registered mode means `full`.
+ */
+export function strictestCapture(modes: Iterable<ContentCapture>): ContentCapture {
+  let strictest: ContentCapture = "full"
+  for (const mode of modes) if (CAPTURE_RANK[mode] < CAPTURE_RANK[strictest]) strictest = mode
+  return strictest
+}
+
+/**
+ * An error's text under a capture mode. Error messages can carry commands, stderr or
+ * repository text, so outside `full` only the structured error type is exported; under
+ * `full` the message is kept but redacted.
+ */
+export function errorText(
+  mode: ContentCapture,
+  redact: (text: string) => string,
+  error: { type: string; message?: string } | undefined,
+): string {
+  if (!error) return "unknown"
+  if (mode !== "full") return error.type
+  return redact(error.message ? `${error.type}: ${error.message}` : error.type)
 }

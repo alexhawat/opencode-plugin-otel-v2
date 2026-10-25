@@ -13,6 +13,7 @@ import {
   SESSION_ID,
 } from "@arizeai/openinference-semantic-conventions"
 import {
+  genAiOperationAttrs,
   agentAttrs,
   getSessionAgentMeta,
   isMetricEnabled,
@@ -22,7 +23,7 @@ import {
   stableProjectId,
 } from "../util.ts"
 import type { HandlerContext, SessionAgentType } from "../types.ts"
-import { errorSummary, modelRef, type V2Error, type V2Model } from "../v2.ts"
+import { modelRef, type V2Error, type V2Model } from "../v2.ts"
 
 const OPENINFERENCE_SPAN_KIND = SemanticConventions.OPENINFERENCE_SPAN_KIND
 
@@ -103,6 +104,15 @@ export function ensureSessionTotals(
 }
 
 /** Starts or refreshes the root run span for a single user turn, keyed by the user message ID. */
+/** The run span's prompt attributes under the configured `captureContent` mode. */
+function promptAttrs(promptText: string, ctx: HandlerContext) {
+  return ctx.content(promptText, "input.length", (prompt) => ({
+    [INPUT_VALUE]: prompt,
+    [INPUT_MIME_TYPE]: MimeType.TEXT,
+    [LLM_INPUT_MESSAGES]: JSON.stringify([{ role: "user", content: prompt }]),
+  }))
+}
+
 export function handleRunStarted(
   runID: string,
   sessionID: string,
@@ -113,7 +123,6 @@ export function handleRunStarted(
   ctx: HandlerContext,
 ) {
   ctx.activeRuns.set(sessionID, runID)
-  const safePrompt = ctx.redact(promptText)
   if (!isTraceEnabled("session", ctx)) return
   const totals = ctx.sessionTotals.get(sessionID)
   const agentType: SessionAgentType | "unknown" = totals?.agentType ?? "primary"
@@ -124,13 +133,7 @@ export function handleRunStarted(
       [AGENT_NAME]: agent,
       "agent.type": agentType,
       "session.is_subagent": isSubagent,
-      ...(promptText
-        ? {
-            [INPUT_VALUE]: safePrompt,
-            [INPUT_MIME_TYPE]: MimeType.TEXT,
-            [LLM_INPUT_MESSAGES]: JSON.stringify([{ role: "user", content: safePrompt }]),
-          }
-        : {}),
+      ...promptAttrs(promptText, ctx),
       model,
     })
     return
@@ -142,17 +145,12 @@ export function handleRunStarted(
       startTime,
       attributes: {
         [OPENINFERENCE_SPAN_KIND]: OpenInferenceSpanKind.AGENT,
+        ...genAiOperationAttrs("invoke_agent", agent),
         [SESSION_ID]: sessionID,
         [AGENT_NAME]: agent,
         "agent.type": agentType,
         "session.is_subagent": isSubagent,
-        ...(promptText
-          ? {
-              [INPUT_VALUE]: safePrompt,
-              [INPUT_MIME_TYPE]: MimeType.TEXT,
-              [LLM_INPUT_MESSAGES]: JSON.stringify([{ role: "user", content: safePrompt }]),
-            }
-          : {}),
+        ...promptAttrs(promptText, ctx),
         model,
         ...ctx.attrsFor(sessionID),
       },
@@ -215,6 +213,7 @@ export function handleSessionCreated(
         startTime: createdAt,
         attributes: {
           [OPENINFERENCE_SPAN_KIND]: OpenInferenceSpanKind.AGENT,
+          ...genAiOperationAttrs("invoke_agent", agent),
           [SESSION_ID]: sessionID,
           [AGENT_NAME]: agent,
           "agent.type": agentType,
@@ -326,8 +325,8 @@ export function handleExecutionEnded(
   const sessionID = data.sessionID
   const totals = ctx.sessionTotals.get(sessionID)
   const { agentName, agentType } = getSessionAgentMeta(sessionID, ctx)
-  endRunSpan(sessionID, ctx, error ? errorSummary(error) : undefined)
-  endSessionSpan(sessionID, ctx, error ? errorSummary(error) : undefined)
+  endRunSpan(sessionID, ctx, error ? ctx.errorText(error) : undefined)
+  endSessionSpan(sessionID, ctx, error ? ctx.errorText(error) : undefined)
   // Clear per-turn state so the next turn starts a fresh run span and prompt log.
   ctx.promptEmitted.delete(sessionID)
   ctx.runPrompts.delete(sessionID)
@@ -354,7 +353,7 @@ export function handleExecutionEnded(
     attributes: {
       "event.name": error ? "session.error" : "session.execution.succeeded",
       "session.id": sessionID,
-      ...(error ? { error: errorSummary(error) } : {}),
+      ...(error ? { error: ctx.errorText(error) } : {}),
       total_tokens: totals?.tokens ?? 0,
       total_cost_usd: totals?.cost ?? 0,
       total_messages: totals?.messages ?? 0,
@@ -365,7 +364,7 @@ export function handleExecutionEnded(
   ctx.log(error ? "error" : "debug", error ? "otel: session.execution.failed" : "otel: session.execution.succeeded", {
     sessionID,
     reason: data.reason,
-    ...(error ? { error: errorSummary(error) } : {}),
+    ...(error ? { error: ctx.errorText(error) } : {}),
   })
 }
 

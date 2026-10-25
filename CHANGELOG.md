@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+- **feat: `captureContent` option (`OPENCODE_CAPTURE_CONTENT`).** Controls whether prompt text and
+  tool input/output reach exported spans: `full` (the default, unchanged behaviour — bodies after
+  `redactSecrets`), `metadata` (no bodies, only `input.length` / `output.length` character counts),
+  or `off` (neither). The `user_prompt` log's prompt text now also requires `full`. An unrecognised
+  value fails closed to `metadata`. Outside `full`, error messages are withheld too (span status,
+  `error` attribute, `session.error` log): only the error type is exported. Instances in one
+  process (one per location) all apply the strictest mode any of them sets, because they share
+  an event stream and any instance may handle another location's events. A host that must not
+  export repository content — for example a reviewer running untrusted pull requests — can now
+  keep the LLM/tool span structure while withholding the bodies.
+- **feat: `disabledMetrics: ["all"]` (or `"*"`) silences every metric**, matching `disabledTraces`.
+  Useful when the backend bills OTLP metrics separately and only traces are wanted.
+- **feat: OTel GenAI operation on every span.** Session spans carry
+  `gen_ai.operation.name=invoke_agent`, tool spans `execute_tool` (with `gen_ai.tool.name`) and
+  LLM steps `chat` (with `gen_ai.request.model`), plus `gen_ai.provider.name`, next to the
+  OpenInference span kind. Datadog LLM Observability flagged spans without them as
+  unidentified instrumentation.
+- **fix: LLM step token counts follow OpenInference totals.** OpenCode reports input without
+  cached tokens and reasoning apart from output; `llm.token_count.prompt` now includes cache reads
+  and writes, `llm.token_count.completion` includes reasoning, and the total is their sum. Datadog
+  LLM Observability previously derived negative uncached input from these spans.
+- verify: `verify/content.ts` asserts which bodies (including error messages) reach spans and logs
+  in each mode, and the token totals; `verify/content-mixed.ts` covers a `full` and a `metadata`
+  instance sharing one process.
+
 ## 0.3.3
 
 - **`project.id` is now deterministic and consistent.** It is `sha1(project.directory)` (40 hex),

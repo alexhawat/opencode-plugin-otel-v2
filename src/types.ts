@@ -1,5 +1,6 @@
 import type { Context, Counter, Gauge, Histogram, Span, SpanContext, Tracer } from "@opentelemetry/api"
 import type { LogRecord } from "@opentelemetry/api-logs"
+import type { V2Error } from "./v2.ts"
 
 /** Numeric priority map for log levels; higher value = higher severity. */
 export const LEVELS = { debug: 0, info: 1, warn: 2, error: 3 } as const
@@ -111,6 +112,13 @@ export type HandlerContext = {
   llmRequestContexts: Map<string, LlmRequestContext[]>
   tracePropagationProviders: Set<string>
   capturePromptInLogs: boolean
+  /** An error's exported text under the effective capture mode (type only outside `full`). */
+  errorText: (error: V2Error | undefined) => string
+  /**
+   * Content attributes for one body, honouring `captureContent`: `build(redacted)` under
+   * `full`, `{ [lengthKey]: text.length }` under `metadata`, nothing under `off`.
+   */
+  content: (text: string, lengthKey: string, build: (redacted: string) => Record<string, string>) => Record<string, string | number>
   redact: (text: string) => string
   runPrompts: Map<string, string>
   promptEmitted: Set<string>
