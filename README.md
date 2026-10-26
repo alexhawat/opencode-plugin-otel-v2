@@ -31,7 +31,10 @@ opencode plugin add github:alexhawat/opencode-plugin-otel-v2
 
 ### Local directory
 
-Clone the repo and point the config at the directory (V2 requires a **directory**, not a file):
+Clone the repo and point the config at the directory (V2 requires a **directory**, not a file).
+Don't clone it into `~/.config/opencode/plugins/` or `.opencode/plugins/`: OpenCode V2
+auto-loads those folders, so together with the config entry the plugin loads twice
+(duplicate spans and metrics). Use a path such as `~/.local/share/opencode-plugins/`:
 
 ```jsonc
 { "plugins": [{ "package": "/absolute/path/to/opencode-plugin-otel-v2" }] }
