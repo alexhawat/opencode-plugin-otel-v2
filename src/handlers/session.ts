@@ -247,6 +247,9 @@ function sweepSession(sessionID: string, ctx: HandlerContext) {
       ctx.stepSpans.delete(key)
     }
   }
+  for (const [id, request] of ctx.pendingPermissions) {
+    if (request.sessionID === sessionID) ctx.pendingPermissions.delete(id)
+  }
   ctx.llmRequestContexts.delete(sessionID)
   ctx.pendingSubagentSpans.delete(sessionID)
 }
@@ -415,19 +418,10 @@ export function handleSessionIdle(sessionID: string, ctx: HandlerContext) {
   ctx.log("debug", "otel: session.idle", { sessionID })
 }
 
-/** Increments the retry counter when the session enters a retry state. */
-export function handleSessionStatus(
-  data: { sessionID: string; status?: { type: string; attempt?: number; message?: string } },
-  ctx: HandlerContext,
-) {
-  if (data.status?.type !== "retry") return
-  const { sessionID, status } = data
-  if (isMetricEnabled("retry.count", ctx)) {
+/** Count each durable retry once, regardless of how many status notifications accompany it. */
+export function handleRetryScheduled(data: Record<string, unknown>, ctx: HandlerContext) {
+  const { sessionID } = data
+  if (typeof sessionID === "string" && isMetricEnabled("retry.count", ctx)) {
     ctx.instruments.retryCounter.add(1, { ...ctx.attrsFor(sessionID), "session.id": sessionID })
-    ctx.log("debug", "otel: retry counter incremented", {
-      sessionID,
-      attempt: status.attempt,
-      retryMessage: status.message,
-    })
   }
 }

@@ -88,6 +88,7 @@ export type HandlerContext = {
   commonAttrs: CommonAttrs
   pendingToolSpans: Map<string, PendingToolSpan>
   pendingToolNames: Map<string, string>
+  pendingPermissions: Map<string, { sessionID: string; action: string }>
   pendingSubagentSpans: Map<string, Span>
   sessionTotals: Map<string, SessionTotals>
   sessionMeta: Map<string, { agent: string; model: string }>

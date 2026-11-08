@@ -120,7 +120,8 @@ exports happen while idle.
 | `session.duration`, `session.token.total`, `session.cost.total` | `session.usage.updated`, turn end |
 | `opencode.llm` step span (LLM) + token/cost/cache/model metrics | `session.step.started/ended/failed` |
 | `opencode.tool.<name>` span (TOOL) + `tool.duration` | `session.tool.input.started`, `called`, `success`/`failed` |
-| `retry.count` | `session.status` (retry) |
+| `retry.count` | One increment per durable `session.retry.scheduled` event |
+| `tool_decision` log | `permission.asked` + `permission.replied`: action, reply (once/always/reject), and decision, linked to the active run span |
 | `user_prompt` log (linked to the run span) | first step of each turn |
 | `session.execution.interrupted` log + interrupted span outcome | `session.execution.interrupted` |
 | `session.error` log + error span status | `session.execution.failed` |
@@ -166,10 +167,11 @@ input/output.
 
 ## V1 parity gaps
 
-The V1 handlers for `message.updated`, `message.part.updated`, `permission.*`,
-`command.executed`, and `session.diff` have no V2 equivalent and are **not** ported:
-message/part spans, permission telemetry, command events, and lines-of-code/commit metrics.
-Everything else above is implemented.
+This fork emits step spans in place of V1 message/part spans. V1 command events and
+lines-of-code/commit metrics are outside its current coverage.
+
+Permission logs omit resource paths, command bodies, messages, and request metadata.
+A reply whose request was missed still records the decision with action `unknown`.
 
 ## V2 compatibility notes
 

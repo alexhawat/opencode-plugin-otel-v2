@@ -37,6 +37,24 @@ function location(endpoint: string, credential: string, disabledTraces: string[]
     session: { hook: async (name: string, callback: Function) => { hooks.set(name, callback) } },
     event: { subscribe: async function* () {
       yield event("session.execution.started", { sessionID })
+      const ask = (id: string, action: string) => event("permission.asked", {
+        sessionID, id, action, resources: ["private-resource"], message: "private-message",
+        metadata: { command: "private-command" },
+      })
+      const reply = (requestID: string, decision: string) =>
+        event("permission.replied", { sessionID, requestID, reply: decision })
+      yield ask("a", "edit")
+      yield ask("b", "bash")
+      yield reply("b", "always")
+      yield reply("a", "reject")
+      yield reply("missed", "once")
+      yield ask("unanswered", "read")
+      yield event("session.status", { sessionID, status: { type: "retry", attempt: 1 } })
+      const retry = { ...event("session.retry.scheduled", {
+        sessionID, assistantMessageID: "a", attempt: 1, at: Date.now(), error: { type: "transient", message: "retry" },
+      }), id: "retry-1" }
+      yield retry
+      yield retry
       yield event("session.step.started", step)
       await request()
       const now = Date.now()
@@ -47,6 +65,7 @@ function location(endpoint: string, credential: string, disabledTraces: string[]
       await request()
       yield event("session.step.started", { ...step, assistantMessageID: "b" })
       yield event("session.execution.interrupted", { sessionID, reason: "cancelled" })
+      yield reply("unanswered", "once")
       await request()
     } },
   }
@@ -73,13 +92,19 @@ try {
     .flatMap(r => r.scopeLogs).flatMap(s => s.logRecords)
   assert.ok(logs.some(r => r.body.stringValue === "session.execution.interrupted"))
   assert.ok(!logs.some(r => r.body.stringValue === "session.execution.succeeded"))
+  const attr = (point: any, key: string) => point.attributes.find((a: any) => a.key === key)?.value.stringValue
+  const decisions = logs.filter(r => r.body.stringValue === "tool_decision")
+  assert.deepEqual(decisions.map(r => [attr(r, "permission.action"), attr(r, "permission.reply"), attr(r, "decision")]),
+    [["bash", "always", "accept"], ["edit", "reject", "reject"], ["unknown", "once", "accept"], ["unknown", "once", "accept"]])
+  assert.ok(decisions[0].traceId && decisions[0].spanId)
+  assert.doesNotMatch(JSON.stringify(decisions), /private-resource|private-message|private-command/)
   const metrics = second.requests.flatMap(r => r.payload.resourceMetrics ?? [])
     .flatMap(r => r.scopeMetrics).flatMap(s => s.metrics)
   function points(name: string) {
     return metrics.filter(m => m.name === `opencode.${name}`).flatMap(m => (m.sum ?? m.histogram).dataPoints)
   }
-  const attr = (point: any, key: string) => point.attributes.find((a: any) => a.key === key)?.value.stringValue
   const count = (point: any) => Number(point.asDouble ?? point.asInt)
+  assert.equal(points("retry.count").reduce((sum, p) => sum + count(p), 0), 1)
   assert.equal(points("tool.duration")[0]?.sum, 5000)
   assert.equal(attr(points("model.usage")[0], "model"), "m")
   assert.equal(attr(points("token.usage")[0], "model"), "p/m")

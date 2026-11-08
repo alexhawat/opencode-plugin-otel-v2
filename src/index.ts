@@ -13,7 +13,7 @@ import {
   handleExecutionStarted,
   handleSessionCreated,
   handleSessionIdle,
-  handleSessionStatus,
+  handleRetryScheduled,
 } from "./handlers/session.ts"
 import { handleStepEnded, handleStepStarted, handleUsageUpdated } from "./handlers/usage.ts"
 import {
@@ -22,6 +22,7 @@ import {
   handleToolInputStarted,
   handleToolSuccess,
 } from "./handlers/tool.ts"
+import { handlePermissionAsked, handlePermissionReplied } from "./handlers/permission.ts"
 import { handleModelRequest } from "./handlers/chat-headers.ts"
 import { contentAttrs, errorText, setBoundedMap, stableProjectId, strictestCapture } from "./util.ts"
 import { redactSecrets } from "./redact.ts"
@@ -65,6 +66,7 @@ type TracingState = {
   runPrompts: Map<string, string>
   promptEmitted: Set<string>
   pendingToolSpans: HandlerContext["pendingToolSpans"]
+  pendingPermissions: HandlerContext["pendingPermissions"]
   pendingToolNames: HandlerContext["pendingToolNames"]
   sessionTotals: HandlerContext["sessionTotals"]
   sessionMeta: HandlerContext["sessionMeta"]
@@ -87,6 +89,7 @@ function emptyTracing(): TracingState {
     runPrompts: new Map(),
     promptEmitted: new Set(),
     pendingToolSpans: new Map(),
+    pendingPermissions: new Map(),
     pendingToolNames: new Map(),
     sessionTotals: new Map(),
     sessionMeta: new Map(),
@@ -161,7 +164,7 @@ async function releaseOtel(lease: ExporterLease, shared: SharedOtel) {
  *
  * Emits session lifecycle, usage/token/cost, LLM step, tool, retry, and execution
  * telemetry from the V2 granular event stream. V1-only signals (message parts,
- * permission prompts, command execution, session diffs) are out of scope; see README.
+ * command execution, session diffs) are out of scope; see README.
  */
 export default {
   id: "devtheops.otel",
@@ -257,6 +260,7 @@ export default {
       instruments,
       commonAttrs,
       pendingToolSpans: tracing.pendingToolSpans,
+      pendingPermissions: tracing.pendingPermissions,
       pendingToolNames: tracing.pendingToolNames,
       pendingSubagentSpans: tracing.pendingSubagentSpans,
       sessionTotals: tracing.sessionTotals,
@@ -401,8 +405,14 @@ export default {
                 handleSessionIdle((event.data as any).sessionID, hctx)
                 await forceFlushOtel(providers)
                 break
-              case "session.status":
-                handleSessionStatus(event.data as any, hctx)
+              case "permission.asked":
+                if (config.logsEnabled) handlePermissionAsked(event, hctx)
+                break
+              case "permission.replied":
+                if (config.logsEnabled) handlePermissionReplied(event, hctx)
+                break
+              case "session.retry.scheduled":
+                handleRetryScheduled(event.data, hctx)
                 break
               case "session.usage.updated":
                 handleUsageUpdated(event.data as any, hctx)
