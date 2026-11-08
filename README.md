@@ -3,10 +3,9 @@
 OpenTelemetry telemetry for **OpenCode V2**. Exports session, LLM-step and tool spans, plus
 token/cost/cache metrics and structured logs, to any OTLP endpoint (gRPC or HTTP).
 
-This is a **V2 port** of [`@devtheops/opencode-plugin-otel`](https://github.com/DEVtheOPS/opencode-plugin-otel)
-(upstream is V1-only — [issue #128](https://github.com/DEVtheOPS/opencode-plugin-otel/issues/128)).
-The V1 plugin's handlers targeted events that no longer exist in V2, so the handlers were
-re-architected onto V2's granular event stream. See [Compatibility](#v2-compatibility-notes).
+This plugin began as a port of [`@devtheops/opencode-plugin-otel`](https://github.com/DEVtheOPS/opencode-plugin-otel).
+Both projects now support OpenCode V2. This fork provides content capture controls, secret redaction,
+per-location attributes, and delta metrics by default.
 
 Ported and verified against OpenCode **2.0.15**.
 
@@ -123,12 +122,16 @@ exports happen while idle.
 | `opencode.tool.<name>` span (TOOL) + `tool.duration` | `session.tool.input.started`, `called`, `success`/`failed` |
 | `retry.count` | `session.status` (retry) |
 | `user_prompt` log (linked to the run span) | first step of each turn |
+| `session.execution.interrupted` log + interrupted span outcome | `session.execution.interrupted` |
 | `session.error` log + error span status | `session.execution.failed` |
 | W3C trace-context header injection | `model.request` hook |
 
 Every span, log and metric also carries a human-readable **`project.name`** and **`project.directory`**,
 derived from the session location at startup (no per-repo file). For a git worktree session the
 repository root is used, so linked worktrees report the parent repository's name.
+
+`cache.count` counts steps with cache activity separately for `type=cacheRead` and
+`type=cacheCreation`. Prior versions added cached token quantities to this request counter.
 
 ## Per-location attributes
 
@@ -172,7 +175,9 @@ Everything else above is implemented.
 
 - V2 evaluates a global plugin **once per location** and delivers every event to **every**
   instance. This plugin therefore keeps its OTel providers and tracing state on `globalThis`
-  (one shared instance, flushed but never shut down) and **dedupes events by `event.id`**.
+  and **dedupes events by `event.id`**. Active locations must agree on exporter settings.
+  The last location to close flushes and shuts down the private providers. A later setup can
+  use a new collector or new credentials.
 - V2 does not emit `session.idle`, and `session.created` is absent for pre-existing sessions,
   so the turn root span is anchored on `session.execution.*`.
 - `session.tool.called/success/failed` do not carry the tool name; it is read from

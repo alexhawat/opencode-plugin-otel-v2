@@ -33,13 +33,19 @@ export function handleToolInputStarted(data: { sessionID: string; id: string; na
 export function handleToolCalled(
   data: { sessionID: string; id: string; input?: Record<string, unknown>; assistantMessageID?: string },
   ctx: HandlerContext,
+  created = Date.now(),
 ) {
   const tool = ctx.pendingToolNames.get(data.id) ?? "unknown"
-  if (!isTraceEnabled("tool", ctx)) return
+  const startMs = created
+  const pending = { tool, sessionID: data.sessionID, startMs }
+  if (!isTraceEnabled("tool", ctx)) {
+    ctx.pendingToolSpans.set(data.id, pending)
+    return
+  }
   const span = ctx.tracer.startSpan(
     `${ctx.tracePrefix}tool.${tool}`,
     {
-      startTime: Date.now(),
+      startTime: startMs,
       attributes: {
         [OPENINFERENCE_SPAN_KIND]: OpenInferenceSpanKind.TOOL,
         ...genAiOperationAttrs("execute_tool", tool),
@@ -56,7 +62,7 @@ export function handleToolCalled(
       assistantMessageID: data.assistantMessageID,
     }),
   )
-  ctx.pendingToolSpans.set(data.id, { tool, sessionID: data.sessionID, startMs: Date.now(), span })
+  ctx.pendingToolSpans.set(data.id, { ...pending, span })
   // Let a subagent session created during this call nest under the dispatch span.
   if (SUBAGENT_TOOL.test(tool)) setBoundedMap(ctx.pendingSubagentSpans, data.sessionID, span)
 }
@@ -65,16 +71,18 @@ export function handleToolCalled(
 export function handleToolSuccess(
   data: { sessionID: string; id: string; content?: V2ToolContent[]; metadata?: Record<string, unknown> },
   ctx: HandlerContext,
+  created = Date.now(),
 ) {
-  finishTool(data.sessionID, data.id, ctx, data.content, undefined)
+  finishTool(data.sessionID, data.id, ctx, data.content, undefined, created)
 }
 
 /** Ends the tool span with an error and records its duration. */
 export function handleToolFailed(
   data: { sessionID: string; id: string; content?: V2ToolContent[]; error?: V2Error },
   ctx: HandlerContext,
+  created = Date.now(),
 ) {
-  finishTool(data.sessionID, data.id, ctx, data.content, data.error)
+  finishTool(data.sessionID, data.id, ctx, data.content, data.error, created)
 }
 
 function finishTool(
@@ -83,11 +91,11 @@ function finishTool(
   ctx: HandlerContext,
   content: V2ToolContent[] | undefined,
   error: V2Error | undefined,
+  created: number,
 ) {
   const pending = ctx.pendingToolSpans.get(id)
   const tool = pending?.tool ?? ctx.pendingToolNames.get(id) ?? "unknown"
-  const startMs = pending?.startMs ?? Date.now()
-  const duration = Date.now() - startMs
+  const duration = pending ? Math.max(0, created - pending.startMs) : undefined
 
   const output = content?.map((part) => (part.type === "text" ? part.text : part.uri)).join("\n")
   if (pending?.span) {
@@ -102,10 +110,10 @@ function finishTool(
         ctx.content(output, "output.length", (text) => ({ [OUTPUT_VALUE]: text, [OUTPUT_MIME_TYPE]: MimeType.TEXT })),
       )
     }
-    pending.span.end()
+    pending.span.end(created)
   }
 
-  if (isMetricEnabled("tool.duration", ctx)) {
+  if (duration !== undefined && isMetricEnabled("tool.duration", ctx)) {
     ctx.instruments.toolDurationHistogram.record(duration, {
       ...ctx.attrsFor(sessionID),
       "session.id": sessionID,

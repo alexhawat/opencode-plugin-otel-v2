@@ -1,4 +1,4 @@
-import { diag, DiagConsoleLogger, DiagLogLevel, trace } from "@opentelemetry/api";
+import { diag, DiagConsoleLogger, DiagLogLevel } from "@opentelemetry/api";
 const errors: string[] = [];
 diag.setLogger({
   error: (...a: unknown[]) => { errors.push("ERROR " + a.map(String).join(" ")); },
@@ -8,7 +8,7 @@ diag.setLogger({
 const token = process.env.LOGFIRE_TOKEN;
 const { setupOtel } = await import("../src/otel.ts");
 const p = await setupOtel("https://logfire-eu.pydantic.dev", "http/protobuf", 1000, 500, "2.0.0-v2-port-verify", `Authorization=${token}`);
-const t = trace.getTracer("verify");
+const t = p.tracerProvider.getTracer("verify");
 const s = t.startSpan("logfire-verify-span", { attributes: { "verify.source": "opencode-plugin-otel-v2", "session.id": "ses_verify" } });
 s.end();
 await p.tracerProvider.forceFlush();

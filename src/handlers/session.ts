@@ -237,23 +237,22 @@ function sweepSession(sessionID: string, ctx: HandlerContext) {
       tool.span?.setStatus({ code: SpanStatusCode.ERROR, message: "session ended before tool completed" })
       tool.span?.end()
       ctx.pendingToolSpans.delete(key)
+      ctx.pendingToolNames.delete(key)
     }
   }
-  const prefix = `${sessionID}:`
   for (const [key, step] of ctx.stepSpans) {
-    if (key.startsWith(prefix)) {
-      step.span.setStatus({ code: SpanStatusCode.ERROR, message: "session ended before step completed" })
-      step.span.end()
+    if (step.sessionID === sessionID) {
+      step.span?.setStatus({ code: SpanStatusCode.ERROR, message: "session ended before step completed" })
+      step.span?.end()
       ctx.stepSpans.delete(key)
     }
   }
-  for (const key of ctx.llmRequestContexts.keys()) {
-    if (key.startsWith(prefix)) ctx.llmRequestContexts.delete(key)
-  }
+  ctx.llmRequestContexts.delete(sessionID)
+  ctx.pendingSubagentSpans.delete(sessionID)
 }
 
 /** Ends the active run span for a turn, stamping the cumulative session totals. */
-function endRunSpan(sessionID: string, ctx: HandlerContext, error?: string) {
+function endRunSpan(sessionID: string, ctx: HandlerContext, error?: string, interrupted = false) {
   const totals = ctx.sessionTotals.get(sessionID)
   const runID = ctx.activeRuns.get(sessionID)
   if (runID) ctx.activeRuns.delete(sessionID)
@@ -271,6 +270,8 @@ function endRunSpan(sessionID: string, ctx: HandlerContext, error?: string) {
   if (error) {
     runSpan.setStatus({ code: SpanStatusCode.ERROR, message: error })
     runSpan.setAttribute("error", error)
+  } else if (interrupted) {
+    runSpan.setAttribute("session.outcome", "interrupted")
   } else {
     runSpan.setStatus({ code: SpanStatusCode.OK })
   }
@@ -279,7 +280,7 @@ function endRunSpan(sessionID: string, ctx: HandlerContext, error?: string) {
 }
 
 /** Ends a subagent session span (created on `session.created`) so it exports at turn end. */
-function endSessionSpan(sessionID: string, ctx: HandlerContext, error?: string) {
+function endSessionSpan(sessionID: string, ctx: HandlerContext, error?: string, interrupted = false) {
   const sessionSpan = ctx.sessionSpans.get(sessionID)
   if (!sessionSpan) return
   const totals = ctx.sessionTotals.get(sessionID)
@@ -295,6 +296,8 @@ function endSessionSpan(sessionID: string, ctx: HandlerContext, error?: string) 
   if (error) {
     sessionSpan.setStatus({ code: SpanStatusCode.ERROR, message: error })
     sessionSpan.setAttribute("error", error)
+  } else if (interrupted) {
+    sessionSpan.setAttribute("session.outcome", "interrupted")
   } else {
     sessionSpan.setStatus({ code: SpanStatusCode.OK })
   }
@@ -318,15 +321,18 @@ export function handleExecutionStarted(data: { sessionID: string }, ctx: Handler
 
 /** V2 emits this when a turn completes; ends the run span. */
 export function handleExecutionEnded(
-  data: { sessionID: string; reason?: string },
+  data: { sessionID: string; reason?: string; error?: V2Error },
   ctx: HandlerContext,
-  error?: V2Error,
+  outcome: "succeeded" | "failed" | "interrupted" = "succeeded",
 ) {
   const sessionID = data.sessionID
   const totals = ctx.sessionTotals.get(sessionID)
   const { agentName, agentType } = getSessionAgentMeta(sessionID, ctx)
-  endRunSpan(sessionID, ctx, error ? ctx.errorText(error) : undefined)
-  endSessionSpan(sessionID, ctx, error ? ctx.errorText(error) : undefined)
+  const error = outcome === "failed" ? ctx.errorText(data.error) : undefined
+  const eventName = outcome === "failed" ? "session.error" : `session.execution.${outcome}`
+  sweepSession(sessionID, ctx)
+  endRunSpan(sessionID, ctx, error, outcome === "interrupted")
+  endSessionSpan(sessionID, ctx, error, outcome === "interrupted")
   // Clear per-turn state so the next turn starts a fresh run span and prompt log.
   ctx.promptEmitted.delete(sessionID)
   ctx.runPrompts.delete(sessionID)
@@ -349,11 +355,11 @@ export function handleExecutionEnded(
     severityText: error ? "ERROR" : "INFO",
     timestamp: Date.now(),
     observedTimestamp: Date.now(),
-    body: error ? "session.error" : "session.execution.succeeded",
+    body: eventName,
     attributes: {
-      "event.name": error ? "session.error" : "session.execution.succeeded",
+      "event.name": eventName,
       "session.id": sessionID,
-      ...(error ? { error: ctx.errorText(error) } : {}),
+      ...(error ? { error } : {}),
       total_tokens: totals?.tokens ?? 0,
       total_cost_usd: totals?.cost ?? 0,
       total_messages: totals?.messages ?? 0,
@@ -361,10 +367,10 @@ export function handleExecutionEnded(
       ...ctx.attrsFor(sessionID),
     },
   })
-  ctx.log(error ? "error" : "debug", error ? "otel: session.execution.failed" : "otel: session.execution.succeeded", {
+  ctx.log(error ? "error" : "debug", `otel: session.execution.${outcome}`, {
     sessionID,
     reason: data.reason,
-    ...(error ? { error: ctx.errorText(error) } : {}),
+    ...(error ? { error } : {}),
   })
 }
 
@@ -407,11 +413,6 @@ export function handleSessionIdle(sessionID: string, ctx: HandlerContext) {
     },
   })
   ctx.log("debug", "otel: session.idle", { sessionID })
-}
-
-/** Emits a `session.error` log event and ends the run span with error status. */
-export function handleExecutionFailed(data: { sessionID: string; error?: V2Error }, ctx: HandlerContext) {
-  handleExecutionEnded({ sessionID: data.sessionID }, ctx, data.error)
 }
 
 /** Increments the retry counter when the session enters a retry state. */
