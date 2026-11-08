@@ -43,13 +43,13 @@ function makeCtx() {
       get: async () => ({ agent: "build", model: { id: "deepseek-v4.1-flash", providerID: "opencode-go" } }),
     },
     event: {
-      subscribe: () => ({
+      subscribe: ({ signal }: { signal: AbortSignal }) => ({
         [Symbol.asyncIterator]: () => {
           let i = 0;
           return {
             next: async () => {
               while (i >= events.length) {
-                if (closed) return { done: true, value: undefined };
+                if (closed || signal.aborted) return { done: true, value: undefined };
                 await sleep(10);
               }
               return { done: false, value: events[i++] };
