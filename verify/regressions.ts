@@ -24,6 +24,10 @@ const tool = { sessionID, assistantMessageID: "a", id: "t", name: "read" }
 const event = (type: string, data: object, created = Date.now()) => ({ type, data, created })
 const samples: Record<string, string>[] = []
 
+function attr(point: any, key: string) {
+  return point.attributes.find((a: any) => a.key === key)?.value.stringValue
+}
+
 function location(endpoint: string, credential: string, disabledTraces: string[] = []) {
   const hooks = new Map<string, Function>()
   async function request() {
@@ -40,14 +44,28 @@ function location(endpoint: string, credential: string, disabledTraces: string[]
       yield event("session.step.started", step)
       await request()
       const now = Date.now()
-      yield event("session.tool.input.started", tool, now)
+      const otherSession = { ...tool, sessionID: "other", name: "edit" }
+      const otherMessage = { ...tool, assistantMessageID: "c", name: "list" }
+      for (const call of [tool, otherSession, otherMessage]) {
+        yield event("session.tool.input.started", call, now)
+      }
       yield event("session.tool.called", tool, now)
+      yield event("session.tool.called", otherSession, now + 100)
+      yield event("session.tool.called", otherMessage, now + 200)
+      yield event("session.tool.failed", { ...otherSession, error: { type: "tool", message: "failed" } }, now + 500)
+      yield event("session.tool.success", otherMessage, now + 800)
       yield event("session.tool.success", tool, now + 5000)
       yield event("session.step.ended", usage)
       await request()
       yield event("session.step.started", { ...step, assistantMessageID: "b" })
       yield event("session.execution.interrupted", { sessionID, reason: "cancelled" })
       await request()
+      const unfinished = { ...step, sessionID: "unfinished" }
+      yield event("session.created", { sessionID: unfinished.sessionID, parentID: sessionID })
+      yield event("session.execution.started", unfinished)
+      yield event("session.step.started", unfinished)
+      yield event("session.tool.input.started", { ...tool, ...unfinished })
+      yield event("session.tool.called", { ...tool, ...unfinished })
     } },
   }
 }
@@ -60,6 +78,12 @@ try {
   await cleanup()
   assert.match(samples[0]?.traceparent ?? "", /^00-/)
   assert.deepEqual(samples.slice(1), [{}, {}])
+  const unfinishedSpans = first.requests.flatMap(r => r.payload.resourceSpans ?? [])
+    .flatMap(r => r.scopeSpans).flatMap(s => s.spans)
+    .filter(span => attr(span, "session.id") === "unfinished")
+  assert.deepEqual(unfinishedSpans.map(span => span.name).sort(),
+    ["opencode.llm", "opencode.session", "opencode.session", "opencode.tool.read"])
+  assert.ok(unfinishedSpans.every(span => attr(span, "session.outcome") === "interrupted"))
   const previousExports = first.requests.length
   assert.ok(previousExports > 0)
   assert.ok(first.requests.every(r => r.auth === "first"))
@@ -78,9 +102,9 @@ try {
   function points(name: string) {
     return metrics.filter(m => m.name === `opencode.${name}`).flatMap(m => (m.sum ?? m.histogram).dataPoints)
   }
-  const attr = (point: any, key: string) => point.attributes.find((a: any) => a.key === key)?.value.stringValue
   const count = (point: any) => Number(point.asDouble ?? point.asInt)
-  assert.equal(points("tool.duration")[0]?.sum, 5000)
+  assert.deepEqual(points("tool.duration").map(p => [attr(p, "session.id"), attr(p, "tool"), p.sum]).sort(),
+    [["other", "edit", 400], ["s", "list", 600], ["s", "read", 5000]])
   assert.equal(attr(points("model.usage")[0], "model"), "m")
   assert.equal(attr(points("token.usage")[0], "model"), "p/m")
   assert.deepEqual(points("cache.count").map(p => [attr(p, "type"), count(p)]).sort(),

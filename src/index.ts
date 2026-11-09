@@ -151,6 +151,17 @@ async function acquireOtel(options: ExporterOptions) {
 async function releaseOtel(lease: ExporterLease, shared: SharedOtel) {
   if (--lease.refs > 0) return
   delete globals[SHARED_KEY]
+  // Only ended spans can be exported. A plugin unload may precede the terminal events.
+  const { tracing } = shared
+  function interrupt(span: Span | undefined) {
+    span?.setAttribute("session.outcome", "interrupted")
+    span?.end()
+  }
+  for (const tool of tracing.pendingToolSpans.values()) interrupt(tool.span)
+  for (const step of tracing.stepSpans.values()) interrupt(step.span)
+  for (const run of tracing.runSpans.values()) interrupt(run)
+  for (const session of tracing.sessionSpans.values()) interrupt(session)
+
   const { meterProvider, loggerProvider, tracerProvider } = shared.providers
   await forceFlushOtel(shared.providers)
   await Promise.all([meterProvider.shutdown(), loggerProvider.shutdown(), tracerProvider.shutdown()])
