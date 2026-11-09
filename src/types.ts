@@ -53,7 +53,7 @@ export type LlmRequestContext = {
 
 /** In-flight model step span keyed by `${sessionID}:${assistantMessageID}`. */
 export type StepSpan = {
-  span: Span
+  span?: Span
   sessionID: string
   agent: string
   modelID: string

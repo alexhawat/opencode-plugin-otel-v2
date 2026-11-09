@@ -190,11 +190,6 @@ function expandDisabledTraces(values: string[]): Set<string> {
  * variables. For every field a provided option wins over the environment
  * variable, which in turn wins over the built-in default.
  *
- * Copies the resolved headers, resource attributes, and metrics temporality into
- * `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_RESOURCE_ATTRIBUTES`, and
- * `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` so the OTel SDK picks them
- * up automatically when initialised.
- *
  * Metrics default to `delta`: cumulative snapshots are re-exported on every
  * interval for the lifetime of the process — never idle-stopped — and each new
  * session/series adds to that payload, which can burn through an endpoint's
@@ -205,7 +200,7 @@ export function loadConfig(options: OtelPluginOptions = {}): PluginConfig {
   const resolvedOptions = typeof options === "object" && options !== null ? options : {}
   const otlpHeaders = pickString(resolvedOptions.otlpHeaders) ?? process.env["OPENCODE_OTLP_HEADERS"]
   const otlpHeadersHelper = pickString(resolvedOptions.otlpHeadersHelper) ?? process.env["OPENCODE_OTLP_HEADERS_HELPER"]
-  const resourceAttributes = pickString(resolvedOptions.resourceAttributes) ?? process.env["OPENCODE_RESOURCE_ATTRIBUTES"]
+  const resourceAttributes = pickString(resolvedOptions.resourceAttributes) ?? process.env["OPENCODE_RESOURCE_ATTRIBUTES"] ?? process.env["OTEL_RESOURCE_ATTRIBUTES"]
   const spanAttributes = pickString(resolvedOptions.spanAttributes) ?? process.env["OPENCODE_SPAN_ATTRIBUTES"]
   const traceparent = pickString(resolvedOptions.traceparent) ?? process.env["OPENCODE_TRACEPARENT"]
   const tracestate = pickString(resolvedOptions.tracestate) ?? process.env["OPENCODE_TRACESTATE"]
@@ -230,11 +225,6 @@ export function loadConfig(options: OtelPluginOptions = {}): PluginConfig {
         `Expected one of: cumulative, delta, lowmemory. Value ignored.`,
     )
   }
-
-  if (metricsTemporality) process.env["OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE"] = metricsTemporality
-
-  if (otlpHeaders) process.env["OTEL_EXPORTER_OTLP_HEADERS"] = otlpHeaders
-  if (resourceAttributes) process.env["OTEL_RESOURCE_ATTRIBUTES"] = resourceAttributes
 
   const optionMetrics = pickStringList(resolvedOptions.disabledMetrics)
   const disabledMetrics = expandDisabledMetrics(

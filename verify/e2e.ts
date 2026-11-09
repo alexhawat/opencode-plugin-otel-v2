@@ -86,12 +86,10 @@ server.stop(true);
 
 console.log("=== received OTLP requests ===");
 for (const r of received) console.log(r);
-console.log(received.length > 0 ? "PASS: telemetry exported" : "FAIL: nothing exported");
-console.log(
-  metricsBeforeIdle > 0 && metricsAfterIdle === metricsBeforeIdle
-    ? `PASS: metrics idle-silent (${metricsAfterIdle} exports during activity, none while idle)`
-    : `FAIL: metric exports while idle (${metricsBeforeIdle} -> ${metricsAfterIdle})`,
-);
+if (!received.length) throw new Error("No telemetry exported");
+if (!metricsBeforeIdle || metricsAfterIdle !== metricsBeforeIdle) {
+  throw new Error(`Unexpected metric exports: before idle=${metricsBeforeIdle}, after idle=${metricsAfterIdle}`);
+}
 
 console.log("\n=== trace spans ===");
 for (const { path, body } of bodies) {

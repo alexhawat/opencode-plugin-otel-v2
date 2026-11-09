@@ -92,7 +92,12 @@ export function handleStepStarted(
     )
   }
 
-  if (!isTraceEnabled("llm", ctx)) return
+  const step = { sessionID: data.sessionID, agent, modelID, providerID, started }
+  const key = stepKey(data.sessionID, data.assistantMessageID)
+  if (!isTraceEnabled("llm", ctx)) {
+    ctx.stepSpans.set(key, step)
+    return
+  }
   const span = ctx.tracer.startSpan(
     `${ctx.tracePrefix}llm`,
     {
@@ -112,14 +117,7 @@ export function handleStepStarted(
     },
     resolveSessionTraceContext(data.sessionID, ctx, { assistantMessageID: data.assistantMessageID }),
   )
-  ctx.stepSpans.set(stepKey(data.sessionID, data.assistantMessageID), {
-    span,
-    sessionID: data.sessionID,
-    agent,
-    modelID,
-    providerID,
-    started,
-  })
+  ctx.stepSpans.set(key, { ...step, span })
   const existing = ctx.llmRequestContexts.get(data.sessionID) ?? []
   ctx.llmRequestContexts.set(
     data.sessionID,
@@ -154,7 +152,7 @@ export function handleStepEnded(
   // reports the sums; backends otherwise derive a negative uncached input (Datadog).
   const prompt = tokens ? tokens.input + tokens.cache.read + tokens.cache.write : 0
   const completion = tokens ? tokens.output + tokens.reasoning : 0
-  if (step) {
+  if (step?.span) {
     step.span.setAttributes({
       ...(tokens
         ? {
@@ -176,7 +174,13 @@ export function handleStepEnded(
       step.span.setStatus({ code: SpanStatusCode.OK })
     }
     step.span.end()
-    ctx.stepSpans.delete(key)
+  }
+  ctx.stepSpans.delete(key)
+  const active = ctx.llmRequestContexts.get(data.sessionID)
+  if (active) {
+    const remaining = active.filter((request) => request.messageID !== data.assistantMessageID)
+    if (remaining.length) ctx.llmRequestContexts.set(data.sessionID, remaining)
+    else ctx.llmRequestContexts.delete(data.sessionID)
   }
 
   if (isMetricEnabled("token.usage", ctx)) {
@@ -186,7 +190,8 @@ export function handleStepEnded(
     })
   }
   if (tokens && isMetricEnabled("cache.count", ctx)) {
-    ctx.instruments.cacheCounter.add(tokens.cache.read + tokens.cache.write, attrs)
+    if (tokens.cache.read > 0) ctx.instruments.cacheCounter.add(1, { ...attrs, type: "cacheRead" })
+    if (tokens.cache.write > 0) ctx.instruments.cacheCounter.add(1, { ...attrs, type: "cacheCreation" })
   }
   if (typeof data.cost === "number" && isMetricEnabled("cost.usage", ctx)) {
     ctx.instruments.costCounter.add(data.cost, attrs)

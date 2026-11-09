@@ -1,5 +1,5 @@
-import { logs } from "@opentelemetry/api-logs"
-import { diag, DiagLogLevel, ROOT_CONTEXT, trace, type Span } from "@opentelemetry/api"
+import { createHash } from "node:crypto"
+import { diag, DiagLogLevel, ROOT_CONTEXT, type Span } from "@opentelemetry/api"
 import { appendFileSync, mkdirSync, statSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { basename, dirname, join } from "node:path"
@@ -10,7 +10,6 @@ import { createInstruments, forceFlushOtel, setupOtel, type OtelProviders } from
 import { remoteParentContext } from "./trace-context.ts"
 import {
   handleExecutionEnded,
-  handleExecutionFailed,
   handleExecutionStarted,
   handleSessionCreated,
   handleSessionIdle,
@@ -50,33 +49,13 @@ function resolveEnv(value: string | undefined): string | undefined {
   return value.replace(/\{env:([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, name: string) => process.env[name] ?? "")
 }
 
-// V2 loads a global plugin once per location, and evaluates the module per instance, so
-// module-level state is not shared. The OTel SDK's global providers may only be registered
-// once per process, so the instance is stored on `globalThis` and reused. Providers are
-// flushed (never shut down) on release: shutting a global provider down poisons the OTel
-// registry for the rest of the process, which would silently drop all later telemetry.
-const SHARED_KEY = "__opencode_otel_shared_v1__"
+// Each location evaluates the module separately. Share one exporter and event stream
+// state while locations overlap, and retire both after the last location closes.
+const SHARED_KEY = "__opencode_otel_exporter_v2__"
 
-type SharedOtel = {
-  providers: OtelProviders
-  instruments: ReturnType<typeof createInstruments>
-  logger: ReturnType<typeof logs.getLogger>
-  tracer: ReturnType<typeof trace.getTracer>
-  refs: number
-}
-
-type SharedState = { promise: Promise<SharedOtel> | null; instance: SharedOtel | null }
-
-function sharedState(): SharedState {
-  const g = globalThis as unknown as Record<string, SharedState | undefined>
-  if (!g[SHARED_KEY]) g[SHARED_KEY] = { promise: null, instance: null }
-  return g[SHARED_KEY]!
-}
-
-// Tracing bookkeeping is keyed by session/message id and must be shared across every plugin
-// instance in the process, otherwise a run span created by one instance's hook is invisible
-// to the instance handling the matching event, and child spans become separate root traces.
-const TRACING_KEY = "__opencode_otel_tracing_v1__"
+type SharedOtel = Awaited<ReturnType<typeof startOtel>>
+type ExporterLease = { key: string; ready: Promise<SharedOtel>; refs: number }
+const globals = globalThis as typeof globalThis & { [SHARED_KEY]?: ExporterLease }
 
 type TracingState = {
   seenEvents: Set<string>
@@ -123,76 +102,69 @@ function emptyTracing(): TracingState {
   }
 }
 
-function tracingState(): TracingState {
-  const g = globalThis as unknown as Record<string, TracingState | undefined>
-  const existing = g[TRACING_KEY]
-  if (existing) {
-    // Backfill fields added since the object was first created, so a plugin reload
-    // against a long-lived process cannot leave new fields undefined.
-    const defaults = emptyTracing()
-    for (const key of Object.keys(defaults) as (keyof TracingState)[]) {
-      if (existing[key] === undefined) (existing as Record<string, unknown>)[key] = defaults[key]
-    }
-    return existing
+type ExporterOptions = Pick<ReturnType<typeof loadConfig>,
+  "endpoint" | "protocol" | "metricsInterval" | "logsInterval" | "metricPrefix" |
+  "resourceAttributes" | "metricsTemporality" | "otlpHeaders" | "otlpHeadersHelper"
+>
+
+async function startOtel(options: ExporterOptions) {
+  diag.setLogger({
+    error: (...args: unknown[]) => diagLog(`OTEL ERROR ${args.map(String).join(" ")}`),
+    warn: (...args: unknown[]) => diagLog(`OTEL WARN ${args.map(String).join(" ")}`),
+    info: () => {}, debug: () => {}, verbose: () => {},
+  }, DiagLogLevel.WARN)
+  const providers = await setupOtel(options.endpoint, options.protocol, options.metricsInterval,
+    options.logsInterval, PLUGIN_VERSION, options.otlpHeaders, options.otlpHeadersHelper,
+    options.resourceAttributes, options.metricsTemporality)
+  return {
+    providers,
+    instruments: createInstruments(options.metricPrefix, providers.meterProvider.getMeter("com.opencode")),
+    logger: providers.loggerProvider.getLogger("com.opencode"),
+    tracer: providers.tracerProvider.getTracer("com.opencode"),
+    tracing: emptyTracing(),
   }
-  const created = emptyTracing()
-  g[TRACING_KEY] = created
-  return created
 }
 
-async function acquireOtel(input: {
-  config: ReturnType<typeof loadConfig>
-  otlpHeaders: string | undefined
-  helper: string | undefined
-}): Promise<SharedOtel> {
-  const state = sharedState()
-  if (!state.promise) {
-    state.promise = (async () => {
-      diag.setLogger(
-        {
-          error: (...args: unknown[]) => diagLog(`OTEL ERROR ${args.map(String).join(" ")}`),
-          warn: (...args: unknown[]) => diagLog(`OTEL WARN ${args.map(String).join(" ")}`),
-          info: () => {},
-          debug: () => {},
-          verbose: () => {},
-        },
-        DiagLogLevel.WARN,
-      )
-      const providers = await setupOtel(
-        input.config.endpoint,
-        input.config.protocol,
-        input.config.metricsInterval,
-        input.config.logsInterval,
-        PLUGIN_VERSION,
-        input.otlpHeaders,
-        input.helper,
-      )
-      const instance: SharedOtel = {
-        providers,
-        instruments: createInstruments(input.config.metricPrefix),
-        logger: logs.getLogger("com.opencode"),
-        tracer: trace.getTracer("com.opencode"),
-        refs: 0,
-      }
-      state.instance = instance
-      diagLog(`otel shared instance initialized endpoint=${input.config.endpoint} protocol=${input.config.protocol}`)
-      return instance
-    })()
+async function acquireOtel(options: ExporterOptions) {
+  // SDK exporters also read these standard headers when they are constructed.
+  const environmentHeaders = ["", "_METRICS", "_LOGS", "_TRACES"].map(
+    (signal) => process.env[`OTEL_EXPORTER_OTLP${signal}_HEADERS`],
+  )
+  const key = createHash("sha256").update(JSON.stringify([options, environmentHeaders])).digest("hex")
+  let lease = globals[SHARED_KEY]
+  if (lease && lease.key !== key) {
+    throw new Error("Active OpenCode locations share one telemetry exporter. Close them before changing exporter settings.")
   }
-  const instance = await state.promise
-  instance.refs++
-  diagLog(`otel shared instance acquired refs=${instance.refs}`)
-  return instance
+  if (!lease) {
+    lease = { key, ready: startOtel(options), refs: 0 }
+    globals[SHARED_KEY] = lease
+  }
+  lease.refs++
+  try {
+    return { shared: await lease.ready, lease }
+  } catch (error) {
+    if (globals[SHARED_KEY] === lease) delete globals[SHARED_KEY]
+    throw error
+  }
 }
 
-async function releaseOtel() {
-  const instance = sharedState().instance
-  if (!instance) return
-  instance.refs--
-  diagLog(`otel shared instance released refs=${instance.refs}`)
-  if (instance.refs <= 0) {
-    await forceFlushOtel(instance.providers).catch(() => {})
+async function releaseOtel(lease: ExporterLease, shared: SharedOtel) {
+  if (--lease.refs > 0) return
+  delete globals[SHARED_KEY]
+  // Only ended spans can be exported. A plugin unload may precede the terminal events.
+  const { tracing } = shared
+  function interrupt(span: Span | undefined) {
+    span?.setAttribute("session.outcome", "interrupted")
+    span?.end()
   }
+  for (const tool of tracing.pendingToolSpans.values()) interrupt(tool.span)
+  for (const step of tracing.stepSpans.values()) interrupt(step.span)
+  for (const run of tracing.runSpans.values()) interrupt(run)
+  for (const session of tracing.sessionSpans.values()) interrupt(session)
+
+  const { meterProvider, loggerProvider, tracerProvider } = shared.providers
+  await forceFlushOtel(shared.providers)
+  await Promise.all([meterProvider.shutdown(), loggerProvider.shutdown(), tracerProvider.shutdown()])
 }
 
 /**
@@ -235,12 +207,18 @@ export default {
       })
     }
 
-    const shared = await acquireOtel({
-      config,
+    const { shared, lease } = await acquireOtel({
+      endpoint: config.endpoint,
+      protocol: config.protocol,
+      metricsInterval: config.metricsInterval,
+      logsInterval: config.logsInterval,
+      metricPrefix: config.metricPrefix,
+      resourceAttributes: config.resourceAttributes,
+      metricsTemporality: config.metricsTemporality,
       otlpHeaders: resolveEnv(config.otlpHeaders),
-      helper: otlpHeadersHelper,
+      otlpHeadersHelper,
     })
-    const { instruments, logger, tracer, providers } = shared
+    const { instruments, logger, tracer, providers, tracing } = shared
 
     await log("info", "starting up", {
       version: PLUGIN_VERSION,
@@ -278,7 +256,6 @@ export default {
         : {}),
     } as const
 
-    const tracing = tracingState()
     const redact = config.redactSecrets
       ? (text: string) => redactSecrets(text, config.redactValues)
       : (text: string) => text
@@ -342,54 +319,60 @@ export default {
         }
       }
 
-    // Prompt admission: start the root run span for the user turn.
-    await ctx.session.hook(
-      "prompt",
-      safe("prompt", async (event: any) => {
-        diagLog(`hook prompt session=${event?.sessionID} msg=${event?.messageID}`)
-        const sessionID = event?.sessionID
-        let meta = hctx.sessionMeta.get(sessionID)
-        if (!meta || meta.agent === "unknown" || meta.model === "unknown") {
-          try {
-            const info: any = await ctx.session.get({ sessionID })
-            const s: any = info?.data ?? info
-            meta = {
-              agent: s?.agent ?? meta?.agent ?? "unknown",
-              model: s?.model ? `${s.model.providerID}/${s.model.id}` : (meta?.model ?? "unknown"),
+    try {
+      // Prompt admission: start the root run span for the user turn.
+      await ctx.session.hook(
+        "prompt",
+        safe("prompt", async (event: any) => {
+          diagLog(`hook prompt session=${event?.sessionID} msg=${event?.messageID}`)
+          const sessionID = event?.sessionID
+          let meta = hctx.sessionMeta.get(sessionID)
+          if (!meta || meta.agent === "unknown" || meta.model === "unknown") {
+            try {
+              const info: any = await ctx.session.get({ sessionID })
+              const s: any = info?.data ?? info
+              meta = {
+                agent: s?.agent ?? meta?.agent ?? "unknown",
+                model: s?.model ? `${s.model.providerID}/${s.model.id}` : (meta?.model ?? "unknown"),
+              }
+              diagLog(
+                `prompt enrich session=${sessionID} rawKeys=${Object.keys(info ?? {}).join(",")} agent=${meta.agent} model=${meta.model}`,
+              )
+              setBoundedMap(hctx.sessionMeta, sessionID, meta)
+            } catch (err) {
+              diagLog(`prompt enrich failed session=${sessionID}: ${err instanceof Error ? err.message : String(err)}`)
             }
-            diagLog(
-              `prompt enrich session=${sessionID} rawKeys=${Object.keys(info ?? {}).join(",")} agent=${meta.agent} model=${meta.model}`,
-            )
-            setBoundedMap(hctx.sessionMeta, sessionID, meta)
-          } catch (err) {
-            diagLog(`prompt enrich failed session=${sessionID}: ${err instanceof Error ? err.message : String(err)}`)
           }
-        }
-        const promptText: string = event?.prompt?.text ?? ""
-        // The run span is created on `session.execution.started` — an event ordered after
-        // `session.created` — so a subagent's run span can nest under its session span.
-        setBoundedMap(hctx.runPrompts, sessionID, promptText)
-      }),
-    )
+          const promptText: string = event?.prompt?.text ?? ""
+          // The run span is created on `session.execution.started` — an event ordered after
+          // `session.created` — so a subagent's run span can nest under its session span.
+          setBoundedMap(hctx.runPrompts, sessionID, promptText)
+        }),
+      )
 
-    // Model request: inject W3C trace context for enabled providers.
-    await ctx.session.hook(
-      "model.request",
-      safe("model.request", (event: any) => {
-        handleModelRequest(
-          {
-            sessionID: event.sessionID,
-            agent: event.agent,
-            model: event.model,
-            headers: event.headers,
-          },
-          hctx,
-        )
-      }),
-    )
+      // Model request: inject W3C trace context for enabled providers.
+      await ctx.session.hook(
+        "model.request",
+        safe("model.request", (event: any) => {
+          handleModelRequest(
+            {
+              sessionID: event.sessionID,
+              agent: event.agent,
+              model: event.model,
+              headers: event.headers,
+            },
+            hctx,
+          )
+        }),
+      )
+    } catch (error) {
+      tracing.captureModes.delete(instanceKey)
+      await releaseOtel(lease, shared)
+      throw error
+    }
 
     const controller = new AbortController()
-    void (async () => {
+    const running = (async () => {
       try {
         for await (const event of ctx.event.subscribe({ signal: controller.signal }) as AsyncIterable<V2Event>) {
           // V2 delivers each event to every plugin instance; process it exactly once.
@@ -449,13 +432,13 @@ export default {
                 handleToolInputStarted(event.data as any, hctx)
                 break
               case "session.tool.called":
-                handleToolCalled(event.data as any, hctx)
+                handleToolCalled(event.data as any, hctx, event.created)
                 break
               case "session.tool.success":
-                handleToolSuccess(event.data as any, hctx)
+                handleToolSuccess(event.data as any, hctx, event.created)
                 break
               case "session.tool.failed":
-                handleToolFailed(event.data as any, hctx)
+                handleToolFailed(event.data as any, hctx, event.created)
                 break
               case "session.execution.started":
                 handleExecutionStarted(event.data as any, hctx)
@@ -465,11 +448,11 @@ export default {
                 await forceFlushOtel(providers)
                 break
               case "session.execution.failed":
-                handleExecutionFailed(event.data as any, hctx)
+                handleExecutionEnded(event.data as any, hctx, "failed")
                 await forceFlushOtel(providers)
                 break
               case "session.execution.interrupted":
-                handleExecutionEnded(event.data as any, hctx)
+                handleExecutionEnded(event.data as any, hctx, "interrupted")
                 await forceFlushOtel(providers)
                 break
             }
@@ -487,9 +470,11 @@ export default {
     await log("info", "plugin ready", { version: PLUGIN_VERSION })
 
     return async () => {
+      if (controller.signal.aborted) return
       controller.abort()
+      await running
       tracing.captureModes.delete(instanceKey)
-      await releaseOtel()
+      await releaseOtel(lease, shared)
     }
   },
 }
