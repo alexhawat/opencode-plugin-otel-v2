@@ -207,7 +207,7 @@ export function createInstruments(prefix: string, meter: Meter): Instruments {
     }),
     retryCounter: meter.createCounter(`${prefix}retry.count`, {
       unit: "{retry}",
-      description: "Number of API retries observed via session.status events",
+      description: "Number of API retries observed via session.retry.scheduled events",
     }),
     subtaskCounter: meter.createCounter(`${prefix}subtask.count`, {
       unit: "{subtask}",
