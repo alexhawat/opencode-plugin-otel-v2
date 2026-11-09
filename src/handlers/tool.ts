@@ -24,22 +24,29 @@ const TOOL_NAME = "tool.name"
 /** Tools that spawn a child (subagent) session; their span parents the subagent's tree. */
 const SUBAGENT_TOOL = /^(subagent|task)$/i
 
+type ToolCall = { sessionID: string; assistantMessageID: string; id: string }
+
+function toolKey({ sessionID, assistantMessageID, id }: ToolCall): string {
+  return JSON.stringify([sessionID, assistantMessageID, id])
+}
+
 /** Remembers the tool name for a call id, since V2 carries it only on `session.tool.input.started`. */
-export function handleToolInputStarted(data: { sessionID: string; id: string; name?: string }, ctx: HandlerContext) {
-  if (data.name) setBoundedMap(ctx.pendingToolNames, data.id, data.name)
+export function handleToolInputStarted(data: ToolCall & { name?: string }, ctx: HandlerContext) {
+  if (data.name) setBoundedMap(ctx.pendingToolNames, toolKey(data), data.name)
 }
 
 /** Starts the tool span when the tool is called. */
 export function handleToolCalled(
-  data: { sessionID: string; id: string; input?: Record<string, unknown>; assistantMessageID?: string },
+  data: ToolCall & { input?: Record<string, unknown> },
   ctx: HandlerContext,
   created = Date.now(),
 ) {
-  const tool = ctx.pendingToolNames.get(data.id) ?? "unknown"
+  const key = toolKey(data)
+  const tool = ctx.pendingToolNames.get(key) ?? "unknown"
   const startMs = created
   const pending = { tool, sessionID: data.sessionID, startMs }
   if (!isTraceEnabled("tool", ctx)) {
-    ctx.pendingToolSpans.set(data.id, pending)
+    ctx.pendingToolSpans.set(key, pending)
     return
   }
   const span = ctx.tracer.startSpan(
@@ -62,39 +69,40 @@ export function handleToolCalled(
       assistantMessageID: data.assistantMessageID,
     }),
   )
-  ctx.pendingToolSpans.set(data.id, { ...pending, span })
+  ctx.pendingToolSpans.set(key, { ...pending, span })
   // Let a subagent session created during this call nest under the dispatch span.
   if (SUBAGENT_TOOL.test(tool)) setBoundedMap(ctx.pendingSubagentSpans, data.sessionID, span)
 }
 
 /** Ends the tool span successfully and records its duration. */
 export function handleToolSuccess(
-  data: { sessionID: string; id: string; content?: V2ToolContent[]; metadata?: Record<string, unknown> },
+  data: ToolCall & { content?: V2ToolContent[]; metadata?: Record<string, unknown> },
   ctx: HandlerContext,
   created = Date.now(),
 ) {
-  finishTool(data.sessionID, data.id, ctx, data.content, undefined, created)
+  finishTool(data, ctx, data.content, undefined, created)
 }
 
 /** Ends the tool span with an error and records its duration. */
 export function handleToolFailed(
-  data: { sessionID: string; id: string; content?: V2ToolContent[]; error?: V2Error },
+  data: ToolCall & { content?: V2ToolContent[]; error?: V2Error },
   ctx: HandlerContext,
   created = Date.now(),
 ) {
-  finishTool(data.sessionID, data.id, ctx, data.content, data.error, created)
+  finishTool(data, ctx, data.content, data.error, created)
 }
 
 function finishTool(
-  sessionID: string,
-  id: string,
+  data: ToolCall,
   ctx: HandlerContext,
   content: V2ToolContent[] | undefined,
   error: V2Error | undefined,
   created: number,
 ) {
-  const pending = ctx.pendingToolSpans.get(id)
-  const tool = pending?.tool ?? ctx.pendingToolNames.get(id) ?? "unknown"
+  const { sessionID } = data
+  const key = toolKey(data)
+  const pending = ctx.pendingToolSpans.get(key)
+  const tool = pending?.tool ?? ctx.pendingToolNames.get(key) ?? "unknown"
   const duration = pending ? Math.max(0, created - pending.startMs) : undefined
 
   const output = content?.map((part) => (part.type === "text" ? part.text : part.uri)).join("\n")
@@ -121,8 +129,8 @@ function finishTool(
     })
   }
 
-  ctx.pendingToolSpans.delete(id)
-  ctx.pendingToolNames.delete(id)
+  ctx.pendingToolSpans.delete(key)
+  ctx.pendingToolNames.delete(key)
   if (SUBAGENT_TOOL.test(tool)) ctx.pendingSubagentSpans.delete(sessionID)
   ctx.log("debug", error ? "otel: tool.failed" : "otel: tool.success", { sessionID, tool, duration })
 }

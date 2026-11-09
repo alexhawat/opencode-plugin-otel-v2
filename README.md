@@ -171,7 +171,8 @@ This fork emits step spans in place of V1 message/part spans. V1 command events 
 lines-of-code/commit metrics are outside its current coverage.
 
 Permission logs omit resource paths, command bodies, messages, and request metadata.
-A reply whose request was missed still records the decision with action `unknown`.
+A matched reply links to the run that issued the request. If the request was missed or its turn has ended,
+the reply records the decision with action `unknown` and no trace link.
 
 ## V2 compatibility notes
 

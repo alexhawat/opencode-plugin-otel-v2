@@ -1,14 +1,16 @@
-import { trace } from "@opentelemetry/api"
+import { ROOT_CONTEXT, trace } from "@opentelemetry/api"
 import { SeverityNumber } from "@opentelemetry/api-logs"
 import type { HandlerContext } from "../types.ts"
 import type { V2Event } from "../v2.ts"
 import { setBoundedMap } from "../util.ts"
 
-/** Keep only the action needed to label the eventual reply. */
+/** Retain the action and originating span context until the request is answered. */
 export function handlePermissionAsked({ data }: V2Event, ctx: HandlerContext) {
   const { id, sessionID, action } = data
   if (typeof id === "string" && typeof sessionID === "string" && typeof action === "string") {
-    setBoundedMap(ctx.pendingPermissions, id, { sessionID, action: ctx.redact(action) })
+    const runID = ctx.activeRuns.get(sessionID)
+    const spanContext = runID ? ctx.runSpans.get(runID)?.spanContext() : undefined
+    setBoundedMap(ctx.pendingPermissions, id, { sessionID, action: ctx.redact(action), spanContext })
   }
 }
 
@@ -18,10 +20,9 @@ export function handlePermissionReplied({ data, created }: V2Event, ctx: Handler
   if (reply !== "always" && reply !== "once" && reply !== "reject") return
 
   const pending = ctx.pendingPermissions.get(requestID)
-  const action = pending?.sessionID === sessionID ? pending.action : undefined
-  if (action !== undefined) ctx.pendingPermissions.delete(requestID)
-  const runID = ctx.activeRuns.get(sessionID)
-  const span = runID ? ctx.runSpans.get(runID) : undefined
+  const request = pending?.sessionID === sessionID ? pending : undefined
+  if (request) ctx.pendingPermissions.delete(requestID)
+  const context = request?.spanContext ? trace.setSpanContext(ROOT_CONTEXT, request.spanContext) : ROOT_CONTEXT
   ctx.emitLog({
     severityNumber: SeverityNumber.INFO,
     severityText: "INFO",
@@ -31,9 +32,9 @@ export function handlePermissionReplied({ data, created }: V2Event, ctx: Handler
       ...ctx.attrsFor(sessionID),
       "event.name": "tool_decision",
       "session.id": sessionID,
-      "permission.action": action ?? "unknown",
+      "permission.action": request?.action ?? "unknown",
       "permission.reply": reply,
       decision: reply === "reject" ? "reject" : "accept",
     },
-  }, span ? trace.setSpan(ctx.rootContext(), span) : undefined)
+  }, context)
 }
