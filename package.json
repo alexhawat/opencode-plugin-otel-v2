@@ -38,7 +38,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "verify": "bun run verify/regressions.ts && bun run verify/e2e.ts && bun run verify/linking.ts && bun run verify/content.ts full && bun run verify/content.ts metadata && bun run verify/content.ts off && bun run verify/content-mixed.ts && bun run verify/pending.ts && bun run verify/labels.ts full && bun run verify/labels.ts metadata && bun run verify/labels.ts off",
+    "verify": "bun run verify/regressions.ts && bun run verify/e2e.ts && bun run verify/linking.ts && bun run verify/content.ts full && bun run verify/content.ts metadata && bun run verify/content.ts off && bun run verify/content-mixed.ts && bun run verify/pending.ts && bun run verify/labels.ts full && bun run verify/labels.ts metadata && bun run verify/labels.ts off && bun run verify/reply.ts full && bun run verify/reply.ts metadata && bun run verify/reply.ts off",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build"
   },

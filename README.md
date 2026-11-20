@@ -149,6 +149,7 @@ exports happen while idle.
 | Session count + `session.created` log | `session.created`, or lazily on first sight |
 | `session.duration`, `session.token.total`, `session.cost.total` | `session.usage.updated`, turn end |
 | `opencode.llm` step span (LLM) + token/cost/cache/model metrics | `session.step.started/ended/failed` |
+| The assistant's reply text on the step span (`output.value`, `llm.output_messages`) | `session.text.ended`, written when the step ends |
 | `opencode.tool.<name>` span (TOOL) + `tool.duration` | `session.tool.input.started`, `called`, `success`/`failed` |
 | `retry.count` | `session.status` (retry) |
 | `user_prompt` log (linked to the run span) | first step of each turn |
@@ -200,7 +201,7 @@ change, so existing queries on `span_name` keep working.
 | Subagent session (`opencode.session`) | `subagent <agent>: <session title>` |
 | Subagent dispatch (`opencode.tool.subagent`) | `dispatch <agent>: <description>` |
 | Tool (`opencode.tool.<name>`) | `<name>: <path, command, pattern or URL>` |
-| LLM step (`opencode.llm`) | `llm <model>` |
+| LLM step (`opencode.llm`) | `llm <model>: <start of the reply>` |
 
 The part after the colon is content. It is redacted like any other content, collapsed to one
 line and truncated, and it is only included when `captureContent` is `full`; in `metadata` and
