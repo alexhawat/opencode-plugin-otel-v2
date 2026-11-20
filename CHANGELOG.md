@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **feat: `pendingSpans` option (`OPENCODE_PENDING_SPANS`): running turns show as a tree.** A
+  span is exported when it ends, and a turn's root span can stay open for hours, so the LLM and
+  tool spans of a running turn reached the backend with a parent it had never seen and were
+  listed as loose rows. The plugin now also exports a zero-length placeholder for each span when
+  it starts, in Pydantic Logfire's pending-span shape (`logfire.span_type=pending_span`,
+  `logfire.pending_parent_id`, the real span as parent). Logfire shows the span as ongoing with
+  its children nested, and replaces the placeholder when the real span arrives. The default
+  `auto` enables it only for a Logfire endpoint (`logfire-*.pydantic.dev`); `true` / `false`
+  force it. Real spans are unchanged.
+- **fix: the turn's outcome log joins the turn's trace.** `session.execution.succeeded`,
+  `session.execution.interrupted` and `session.error` were emitted after the run span ended,
+  with no trace context, so each became a one-record trace of its own. They now carry the run
+  span's context.
+- verify: `verify/pending.ts` asserts that a running turn has already exported placeholders
+  for its root span and open LLM step, that the real spans arrive under the ids the
+  placeholders pointed at, that the outcome log is in the turn's trace, and the `auto` rule.
 - **feat: `captureContent` option (`OPENCODE_CAPTURE_CONTENT`).** Controls whether prompt text and
   tool input/output reach exported spans: `full` (the default, unchanged behaviour — bodies after
   `redactSecrets`), `metadata` (no bodies, only `input.length` / `output.length` character counts),

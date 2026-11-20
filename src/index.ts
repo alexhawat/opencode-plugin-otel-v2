@@ -104,7 +104,7 @@ function emptyTracing(): TracingState {
 
 type ExporterOptions = Pick<ReturnType<typeof loadConfig>,
   "endpoint" | "protocol" | "metricsInterval" | "logsInterval" | "metricPrefix" |
-  "resourceAttributes" | "metricsTemporality" | "otlpHeaders" | "otlpHeadersHelper"
+  "resourceAttributes" | "metricsTemporality" | "otlpHeaders" | "otlpHeadersHelper" | "pendingSpans"
 >
 
 async function startOtel(options: ExporterOptions) {
@@ -115,7 +115,7 @@ async function startOtel(options: ExporterOptions) {
   }, DiagLogLevel.WARN)
   const providers = await setupOtel(options.endpoint, options.protocol, options.metricsInterval,
     options.logsInterval, PLUGIN_VERSION, options.otlpHeaders, options.otlpHeadersHelper,
-    options.resourceAttributes, options.metricsTemporality)
+    options.resourceAttributes, options.metricsTemporality, options.pendingSpans)
   return {
     providers,
     instruments: createInstruments(options.metricPrefix, providers.meterProvider.getMeter("com.opencode")),
@@ -217,6 +217,7 @@ export default {
       metricsTemporality: config.metricsTemporality,
       otlpHeaders: resolveEnv(config.otlpHeaders),
       otlpHeadersHelper,
+      pendingSpans: config.pendingSpans,
     })
     const { instruments, logger, tracer, providers, tracing } = shared
 
@@ -226,6 +227,7 @@ export default {
       protocol: config.protocol,
       metricsInterval: config.metricsInterval,
       metricsTemporality: config.metricsTemporality,
+      pendingSpans: config.pendingSpans,
       logsInterval: config.logsInterval,
       metricPrefix: config.metricPrefix,
       headersHelperSet: !!config.otlpHeadersHelper,

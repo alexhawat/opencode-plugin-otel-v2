@@ -330,6 +330,9 @@ export function handleExecutionEnded(
   const { agentName, agentType } = getSessionAgentMeta(sessionID, ctx)
   const error = outcome === "failed" ? ctx.errorText(data.error) : undefined
   const eventName = outcome === "failed" ? "session.error" : `session.execution.${outcome}`
+  // Taken before the run span ends, so the outcome log lands in the turn's trace, under the
+  // run span, instead of starting a one-record trace of its own.
+  const turnContext = resolveSessionTraceContext(sessionID, ctx)
   sweepSession(sessionID, ctx)
   endRunSpan(sessionID, ctx, error, outcome === "interrupted")
   endSessionSpan(sessionID, ctx, error, outcome === "interrupted")
@@ -366,7 +369,7 @@ export function handleExecutionEnded(
       ...agentAttrs(agentName, agentType),
       ...ctx.attrsFor(sessionID),
     },
-  })
+  }, turnContext)
   ctx.log(error ? "error" : "debug", `otel: session.execution.${outcome}`, {
     sessionID,
     reason: data.reason,
