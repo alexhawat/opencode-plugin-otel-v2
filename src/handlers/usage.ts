@@ -112,6 +112,7 @@ export function handleStepStarted(
         "gen_ai.provider.name": genAiProviderName(providerID),
         [LLM_MODEL_NAME]: modelID,
         agent,
+        ...ctx.label(`llm ${modelID}`),
         ...ctx.attrsFor(data.sessionID),
       },
     },

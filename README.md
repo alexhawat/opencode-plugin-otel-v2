@@ -122,6 +122,7 @@ option takes precedence over that variable and the built-in default.
 | `redactSecrets` | `true` (`!OPENCODE_NO_REDACT`) | Mask credential-shaped strings and known secrets. |
 | `redactValues` | — | Exact values to mask verbatim. |
 | `locationAttributes` | `OPENCODE_LOCATION_ATTRIBUTES` / `.opencode/attributes.json` | Location-relative JSON file of per-session attributes. |
+| `spanLabels` | `true` (`!OPENCODE_NO_SPAN_LABELS`) | Add a readable label to each span in `logfire.msg`, e.g. `subagent wave-plan-executor: Execute W5`. See [Readable labels](#readable-labels). |
 | `pendingSpans` | `OPENCODE_PENDING_SPANS` / `auto` | Export a placeholder for each span when it starts, so a running turn shows as a tree: `auto` (on for a Pydantic Logfire endpoint only), `true`/`on`, `false`/`off`. See [Running turns](#running-turns). |
 | `disabledMetrics` / `disabledTraces` | `OPENCODE_DISABLE_METRICS` / `OPENCODE_DISABLE_TRACES` | Silence by name (`session`, `llm`, `tool` for traces); `all` or `*` silences every metric or trace. |
 | `traceparent` / `tracestate` | `OPENCODE_TRACEPARENT` / `OPENCODE_TRACESTATE` | W3C parent for the root. |
@@ -183,6 +184,27 @@ acceptable. It doubles the number of exported span records; it does not change t
 
 The turn's outcome log (`session.execution.succeeded`, `.interrupted`, or `session.error`) is
 emitted inside the turn's trace, under the run span.
+
+## Readable labels
+
+Span names are fixed and low-cardinality (`opencode.session`, `opencode.llm`,
+`opencode.tool.read`), which is right for grouping and wrong for reading a trace: a subagent's
+session and each of its turns are all called `opencode.session`. With `spanLabels` on (the
+default), every span also carries a label in the `logfire.msg` attribute. Pydantic Logfire shows
+it as the row's message; other backends keep it as an ordinary attribute. Span names do not
+change, so existing queries on `span_name` keep working.
+
+| Span | Label |
+| --- | --- |
+| Turn (`opencode.session`) | `<agent> turn: <start of the prompt>` |
+| Subagent session (`opencode.session`) | `subagent <agent>: <session title>` |
+| Subagent dispatch (`opencode.tool.subagent`) | `dispatch <agent>: <description>` |
+| Tool (`opencode.tool.<name>`) | `<name>: <path, command, pattern or URL>` |
+| LLM step (`opencode.llm`) | `llm <model>` |
+
+The part after the colon is content. It is redacted like any other content, collapsed to one
+line and truncated, and it is only included when `captureContent` is `full`; in `metadata` and
+`off` the label is the structural part alone (`build turn`, `read`, `subagent explore`).
 
 ## Per-location attributes
 

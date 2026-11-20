@@ -24,6 +24,7 @@ import {
 } from "./handlers/tool.ts"
 import { handleModelRequest } from "./handlers/chat-headers.ts"
 import { contentAttrs, errorText, setBoundedMap, stableProjectId, strictestCapture } from "./util.ts"
+import { spanLabel } from "./label.ts"
 import { redactSecrets } from "./redact.ts"
 import type { V2Event } from "./v2.ts"
 
@@ -62,6 +63,7 @@ type TracingState = {
   /** Capture mode per live plugin instance; every instance applies the strictest. */
   captureModes: Map<symbol, ContentCapture>
   pendingSubagentSpans: Map<string, Span>
+  subagentDispatches: HandlerContext["subagentDispatches"]
   runPrompts: Map<string, string>
   promptEmitted: Set<string>
   pendingToolSpans: HandlerContext["pendingToolSpans"]
@@ -84,6 +86,7 @@ function emptyTracing(): TracingState {
     seenEvents: new Set(),
     captureModes: new Map(),
     pendingSubagentSpans: new Map(),
+    subagentDispatches: new Map(),
     runPrompts: new Map(),
     promptEmitted: new Set(),
     pendingToolSpans: new Map(),
@@ -300,6 +303,8 @@ export default {
         return config.capturePromptInLogs && capture() === "full"
       },
       content: (text, lengthKey, build) => contentAttrs(capture(), redact, text, lengthKey, build),
+      label: (head, detail) => (config.spanLabels ? spanLabel(capture(), redact, head, detail) : {}),
+      subagentDispatches: tracing.subagentDispatches,
       errorText: (error) => errorText(capture(), redact, error),
       redact,
       runPrompts: tracing.runPrompts,
