@@ -15,7 +15,7 @@ import {
   handleSessionIdle,
   handleSessionStatus,
 } from "./handlers/session.ts"
-import { handleStepEnded, handleStepStarted, handleUsageUpdated } from "./handlers/usage.ts"
+import { handleStepEnded, handleStepStarted, handleTextEnded, handleUsageUpdated } from "./handlers/usage.ts"
 import {
   handleToolCalled,
   handleToolFailed,
@@ -427,6 +427,9 @@ export default {
                 break
               case "session.step.started":
                 handleStepStarted(event.data as any, hctx)
+                break
+              case "session.text.ended":
+                handleTextEnded(event.data as any, hctx)
                 break
               case "session.step.ended":
                 handleStepEnded(event.data as any, hctx)

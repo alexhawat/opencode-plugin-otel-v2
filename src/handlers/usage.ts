@@ -5,6 +5,7 @@ import {
   INPUT_VALUE,
   LLM_COST_TOTAL,
   LLM_MODEL_NAME,
+  LLM_OUTPUT_MESSAGES,
   LLM_PROVIDER,
   LLM_SYSTEM,
   LLM_TOKEN_COUNT_COMPLETION,
@@ -15,6 +16,8 @@ import {
   LLM_TOKEN_COUNT_TOTAL,
   MimeType,
   OpenInferenceSpanKind,
+  OUTPUT_MIME_TYPE,
+  OUTPUT_VALUE,
   SemanticConventions,
   SESSION_ID,
 } from "@arizeai/openinference-semantic-conventions"
@@ -129,6 +132,35 @@ export function handleStepStarted(
   )
 }
 
+/** Most segments kept per step, and most characters kept per segment and per reply. */
+const MAX_OUTPUT_SEGMENTS = 32
+const MAX_OUTPUT_CHARS = 64_000
+
+/**
+ * Keeps one finished text segment of the assistant's reply until its step ends. A step's
+ * reply arrives as ordered segments (text between tool calls), each on `session.text.ended`.
+ * A segment for a step that is not open is dropped.
+ */
+export function handleTextEnded(
+  data: { sessionID: string; assistantMessageID: string; ordinal?: number; text?: string },
+  ctx: HandlerContext,
+) {
+  if (typeof data.text !== "string" || !data.text) return
+  const step = ctx.stepSpans.get(stepKey(data.sessionID, data.assistantMessageID))
+  if (!step?.span) return
+  const output = (step.output ??= new Map<number, string>())
+  const ordinal = typeof data.ordinal === "number" ? data.ordinal : output.size
+  if (output.size < MAX_OUTPUT_SEGMENTS || output.has(ordinal)) {
+    output.set(ordinal, data.text.slice(0, MAX_OUTPUT_CHARS))
+  }
+}
+
+/** The step's reply text: its segments in order, joined by newlines. */
+function replyText(output: Map<number, string> | undefined): string {
+  if (!output?.size) return ""
+  return [...output].sort(([a], [b]) => a - b).map(([, text]) => text).join("\n").slice(0, MAX_OUTPUT_CHARS)
+}
+
 /** Ends the LLM step span and records token, cost, cache, and message metrics. */
 export function handleStepEnded(
   data: {
@@ -168,6 +200,14 @@ export function handleStepEnded(
       [LLM_FINISH_REASON]: error ? "error" : (data.finish ?? "stop"),
       ...(typeof data.cost === "number" ? { [LLM_COST_TOTAL]: data.cost } : {}),
       ...(data.files ? { "session.files_changed": data.files.length } : {}),
+      // What the assistant said in this step, under the same rules as any other content.
+      ...ctx.content(replyText(step.output), "output.length", (reply) => ({
+        [OUTPUT_VALUE]: reply,
+        [OUTPUT_MIME_TYPE]: MimeType.TEXT,
+        [LLM_OUTPUT_MESSAGES]: JSON.stringify([{ role: "assistant", content: reply }]),
+      })),
+      // Show the start of the reply in the row, so a trace reads as what the agent said.
+      ...(step.output?.size ? ctx.label(`llm ${step.modelID}`, replyText(step.output)) : {}),
     })
     if (error) {
       step.span.setStatus({ code: SpanStatusCode.ERROR, message: ctx.errorText(error) })
