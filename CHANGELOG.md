@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **feat: the assistant's reply text on LLM step spans.** What the model said in a step, as
+  opposed to what it did, was not exported. The plugin now handles `session.text.ended`, keeps
+  each finished text segment until its step ends, and writes the segments in order to
+  `output.value` and `llm.output_messages` on that step's `opencode.llm` span (as upstream's
+  V2 line does). Unlike upstream, the text follows `captureContent`: redacted under `full`,
+  only `output.length` under `metadata`, nothing under `off`. A reply is capped at 64,000
+  characters and 32 segments. Reasoning text is still not exported.
+- verify: `verify/reply.ts` asserts ordering, the cap, redaction, a tool-only step, a stray
+  segment, and each capture mode.
 - **feat: readable span labels (`spanLabels`, on by default).** A subagent's session and each of
   its turns were all named `opencode.session`, and nothing in a trace row said which agent or
   task it was. Every span now also carries a label in `logfire.msg`, which Pydantic Logfire shows

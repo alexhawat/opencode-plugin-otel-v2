@@ -54,6 +54,8 @@ export type LlmRequestContext = {
 /** In-flight model step span keyed by `${sessionID}:${assistantMessageID}`. */
 export type StepSpan = {
   span?: Span
+  /** Finished reply-text segments of this step, by their order in the reply. */
+  output?: Map<number, string>
   sessionID: string
   agent: string
   modelID: string
