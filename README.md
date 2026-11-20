@@ -122,6 +122,7 @@ option takes precedence over that variable and the built-in default.
 | `redactSecrets` | `true` (`!OPENCODE_NO_REDACT`) | Mask credential-shaped strings and known secrets. |
 | `redactValues` | — | Exact values to mask verbatim. |
 | `locationAttributes` | `OPENCODE_LOCATION_ATTRIBUTES` / `.opencode/attributes.json` | Location-relative JSON file of per-session attributes. |
+| `pendingSpans` | `OPENCODE_PENDING_SPANS` / `auto` | Export a placeholder for each span when it starts, so a running turn shows as a tree: `auto` (on for a Pydantic Logfire endpoint only), `true`/`on`, `false`/`off`. See [Running turns](#running-turns). |
 | `disabledMetrics` / `disabledTraces` | `OPENCODE_DISABLE_METRICS` / `OPENCODE_DISABLE_TRACES` | Silence by name (`session`, `llm`, `tool` for traces); `all` or `*` silences every metric or trace. |
 | `traceparent` / `tracestate` | `OPENCODE_TRACEPARENT` / `OPENCODE_TRACESTATE` | W3C parent for the root. |
 | `tracePropagationProviders` | `OPENCODE_TRACE_PROPAGATION_PROVIDERS` | Providers to inject W3C headers into (`*` = all). |
@@ -160,6 +161,28 @@ its basename becomes `project.name` and its path becomes `project.directory`.
 
 `cache.count` counts steps with cache activity separately for `type=cacheRead` and
 `type=cacheCreation`. Prior versions added cached token quantities to this request counter.
+
+## Running turns
+
+OpenTelemetry exports a span when it **ends**. A turn's root span (`opencode.session`) stays open
+for as long as the agent works, which can be hours, so every LLM step and tool call that finishes
+earlier reaches the backend with a parent it has never seen. Until the turn ends they show as
+loose rows instead of a tree.
+
+With `pendingSpans` on, the plugin also exports a zero-length **placeholder** for each span the
+moment it starts. It uses Pydantic Logfire's pending-span convention: the placeholder has its own
+span id, the real span as its parent, `logfire.span_type=pending_span`, and the real span's own
+parent in `logfire.pending_parent_id`. Logfire shows the span as ongoing with its children nested
+under it, and replaces the placeholder when the real span arrives. Subagent sessions, which hang
+off the parent's dispatch tool span, appear in place while they run for the same reason.
+
+The default, `auto`, turns this on only when `endpoint` is a Logfire host
+(`logfire-*.pydantic.dev`). A backend that does not know the convention would store each
+placeholder as an extra zero-length span, so set `pendingSpans: true` elsewhere only if that is
+acceptable. It doubles the number of exported span records; it does not change the real spans.
+
+The turn's outcome log (`session.execution.succeeded`, `.interrupted`, or `session.error`) is
+emitted inside the turn's trace, under the run span.
 
 ## Per-location attributes
 

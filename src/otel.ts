@@ -2,6 +2,7 @@ import type { Meter } from "@opentelemetry/api"
 import { LoggerProvider, BatchLogRecordProcessor } from "@opentelemetry/sdk-logs"
 import { MeterProvider, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics"
 import { BasicTracerProvider, BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
+import { PendingSpanProcessor } from "./pending.ts"
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-grpc"
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-grpc"
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc"
@@ -79,6 +80,7 @@ export async function setupOtel(
   otlpHeadersHelper?: string,
   resourceAttributes?: string,
   metricsTemporality: MetricsTemporality = "delta",
+  pendingSpans = false,
 ): Promise<OtelProviders> {
   const resource = buildResource(version, resourceAttributes)
   const temporalityPreference = {
@@ -141,7 +143,9 @@ export async function setupOtel(
 
   const tracerProvider = new BasicTracerProvider({
     resource,
-    spanProcessors: [new BatchSpanProcessor(traceExporter)],
+    spanProcessors: [pendingSpans
+      ? new PendingSpanProcessor(new BatchSpanProcessor(traceExporter))
+      : new BatchSpanProcessor(traceExporter)],
   })
 
   return { meterProvider, loggerProvider, tracerProvider }

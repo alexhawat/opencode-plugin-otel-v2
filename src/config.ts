@@ -1,4 +1,5 @@
 import { LEVELS, type Level } from "./types.ts"
+import { isLogfireEndpoint } from "./pending.ts"
 
 /** Accepted values for `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE`. */
 export type MetricsTemporality = "cumulative" | "delta" | "lowmemory"
@@ -47,6 +48,8 @@ export type PluginConfig = {
   redactSecrets: boolean
   redactValues: string[]
   locationAttributes: string
+  /** Export a placeholder for each span when it starts (see `PendingSpanProcessor`). */
+  pendingSpans: boolean
 }
 
 export function parseAttributePairs(raw: string | undefined): Record<string, string> {
@@ -95,6 +98,7 @@ export type OtelPluginOptions = {
   redactSecrets?: boolean
   redactValues?: string[]
   locationAttributes?: string
+  pendingSpans?: boolean | "auto"
 }
 
 const VALID_PROTOCOLS = new Set<PluginConfig["protocol"]>(["grpc", "http/protobuf", "http/json"])
@@ -146,6 +150,25 @@ function resolveContentCapture(option: unknown): ContentCapture {
       `Expected one of: full, metadata, off. Using "metadata".`,
   )
   return "metadata"
+}
+
+/**
+ * Resolves `pendingSpans` from the option, then `OPENCODE_PENDING_SPANS`, then `auto`.
+ * `auto` turns placeholders on only for a Pydantic Logfire endpoint, the one backend known to
+ * fold them into the real span; elsewhere they would be stored as extra zero-length spans.
+ */
+function resolvePendingSpans(option: unknown, endpoint: string): boolean {
+  if (typeof option === "boolean") return option
+  const raw = typeof option === "string" && option ? option : process.env["OPENCODE_PENDING_SPANS"]
+  const normalized = (raw ?? "auto").trim().toLowerCase()
+  if (["1", "true", "on", "yes"].includes(normalized)) return true
+  if (["0", "false", "off", "no"].includes(normalized)) return false
+  if (normalized !== "auto" && normalized !== "") {
+    console.warn(
+      `[opencode-plugin-otel] Invalid pendingSpans "${String(raw)}". Expected one of: auto, on, off. Using "auto".`,
+    )
+  }
+  return isLogfireEndpoint(endpoint)
 }
 
 function pickMetricsTemporality(value: unknown): MetricsTemporality | undefined {
@@ -241,12 +264,14 @@ export function loadConfig(options: OtelPluginOptions = {}): PluginConfig {
       : splitList(process.env["OPENCODE_TRACE_PROPAGATION_PROVIDERS"]),
   )
 
+  const endpoint = pickString(resolvedOptions.endpoint) ?? process.env["OPENCODE_OTLP_ENDPOINT"] ?? "http://localhost:4317"
+
   return {
     enabled: pickBoolean(resolvedOptions.enabled) ?? hasNonEmptyEnv("OPENCODE_ENABLE_TELEMETRY"),
     logsEnabled: pickBoolean(resolvedOptions.logsEnabled) ?? !hasNonEmptyEnv("OPENCODE_DISABLE_LOGS"),
     capturePromptInLogs: pickBoolean(resolvedOptions.capturePromptInLogs) ?? hasNonEmptyEnv("OPENCODE_CAPTURE_PROMPT_IN_LOGS"),
     captureContent: resolveContentCapture(resolvedOptions.captureContent),
-    endpoint: pickString(resolvedOptions.endpoint) ?? process.env["OPENCODE_OTLP_ENDPOINT"] ?? "http://localhost:4317",
+    endpoint,
     protocol,
     metricsInterval: pickPositiveInt(resolvedOptions.metricsInterval) ?? parseEnvInt("OPENCODE_OTLP_METRICS_INTERVAL", 60000),
     logsInterval: pickPositiveInt(resolvedOptions.logsInterval) ?? parseEnvInt("OPENCODE_OTLP_LOGS_INTERVAL", 5000),
@@ -267,6 +292,7 @@ export function loadConfig(options: OtelPluginOptions = {}): PluginConfig {
       pickString(resolvedOptions.locationAttributes) ??
       pickString(process.env["OPENCODE_LOCATION_ATTRIBUTES"]) ??
       ".opencode/attributes.json",
+    pendingSpans: resolvePendingSpans(resolvedOptions.pendingSpans, endpoint),
   }
 }
 
