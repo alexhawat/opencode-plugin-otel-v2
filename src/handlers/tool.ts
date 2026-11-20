@@ -17,6 +17,7 @@ import {
   setBoundedMap,
 } from "../util.ts"
 import type { HandlerContext } from "../types.ts"
+import { toolDetail } from "../label.ts"
 import type { V2Error, V2ToolContent } from "../v2.ts"
 
 const OPENINFERENCE_SPAN_KIND = SemanticConventions.OPENINFERENCE_SPAN_KIND
@@ -49,6 +50,13 @@ export function handleToolCalled(
     ctx.pendingToolSpans.set(key, pending)
     return
   }
+  const isDispatch = SUBAGENT_TOOL.test(tool)
+  const dispatchAgent = typeof data.input?.["agent"] === "string" ? (data.input["agent"] as string) : undefined
+  const dispatchDescription =
+    typeof data.input?.["description"] === "string" ? (data.input["description"] as string) : undefined
+  if (isDispatch) {
+    setBoundedMap(ctx.subagentDispatches, data.sessionID, { agent: dispatchAgent, description: dispatchDescription })
+  }
   const span = ctx.tracer.startSpan(
     `${ctx.tracePrefix}tool.${tool}`,
     {
@@ -58,6 +66,9 @@ export function handleToolCalled(
         ...genAiOperationAttrs("execute_tool", tool),
         [SESSION_ID]: data.sessionID,
         [TOOL_NAME]: tool,
+        ...(isDispatch
+          ? ctx.label(`dispatch ${dispatchAgent ?? "subagent"}`, dispatchDescription)
+          : ctx.label(tool, toolDetail(data.input))),
         ...ctx.content(JSON.stringify(data.input ?? {}), "input.length", (input) => ({
           [INPUT_VALUE]: input,
           [INPUT_MIME_TYPE]: MimeType.JSON,
@@ -71,7 +82,7 @@ export function handleToolCalled(
   )
   ctx.pendingToolSpans.set(key, { ...pending, span })
   // Let a subagent session created during this call nest under the dispatch span.
-  if (SUBAGENT_TOOL.test(tool)) setBoundedMap(ctx.pendingSubagentSpans, data.sessionID, span)
+  if (isDispatch) setBoundedMap(ctx.pendingSubagentSpans, data.sessionID, span)
 }
 
 /** Ends the tool span successfully and records its duration. */

@@ -105,6 +105,11 @@ export function ensureSessionTotals(
 
 /** Starts or refreshes the root run span for a single user turn, keyed by the user message ID. */
 /** The run span's prompt attributes under the configured `captureContent` mode. */
+/** Label head for a turn. The agent is often unknown until the turn's first step. */
+function turnHead(agent: string | undefined): string {
+  return agent && agent !== "unknown" ? `${agent} turn` : "turn"
+}
+
 function promptAttrs(promptText: string, ctx: HandlerContext) {
   return ctx.content(promptText, "input.length", (prompt) => ({
     [INPUT_VALUE]: prompt,
@@ -134,6 +139,7 @@ export function handleRunStarted(
       "agent.type": agentType,
       "session.is_subagent": isSubagent,
       ...promptAttrs(promptText, ctx),
+      ...ctx.label(turnHead(agent), promptText),
       model,
     })
     return
@@ -151,6 +157,7 @@ export function handleRunStarted(
         "agent.type": agentType,
         "session.is_subagent": isSubagent,
         ...promptAttrs(promptText, ctx),
+        ...ctx.label(turnHead(agent), promptText),
         model,
         ...ctx.attrsFor(sessionID),
       },
@@ -207,6 +214,9 @@ export function handleSessionCreated(
     const parentContext = dispatchSpan
       ? trace.setSpan(ctx.rootContext(), dispatchSpan)
       : resolveSessionTraceContext(data.parentID, ctx)
+    // The session's own title, else what the parent said when it dispatched it.
+    const dispatch = ctx.subagentDispatches.get(data.parentID)
+    const subagentName = agent !== "unknown" ? agent : (dispatch?.agent ?? agent)
     const sessionSpan = ctx.tracer.startSpan(
       `${ctx.tracePrefix}session`,
       {
@@ -218,6 +228,7 @@ export function handleSessionCreated(
           [AGENT_NAME]: agent,
           "agent.type": agentType,
           "session.is_subagent": isSubagent,
+          ...ctx.label(`subagent ${subagentName}`, data.title || dispatch?.description),
           ...(data.model ? { model: modelRef(data.model) } : {}),
           ...ctx.attrsFor(sessionID),
         },
@@ -261,6 +272,8 @@ function endRunSpan(sessionID: string, ctx: HandlerContext, error?: string, inte
   if (totals) {
     runSpan.setAttributes({
       [AGENT_NAME]: totals.agent,
+      // The agent may only have become known during the turn; relabel with it.
+      ...ctx.label(turnHead(totals.agent), ctx.runPrompts.get(sessionID)),
       "agent.type": totals.agentType,
       "session.total_tokens": totals.tokens,
       "session.total_cost_usd": totals.cost,

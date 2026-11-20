@@ -50,6 +50,8 @@ export type PluginConfig = {
   locationAttributes: string
   /** Export a placeholder for each span when it starts (see `PendingSpanProcessor`). */
   pendingSpans: boolean
+  /** Add a readable label to each span (see `spanLabel`). */
+  spanLabels: boolean
 }
 
 export function parseAttributePairs(raw: string | undefined): Record<string, string> {
@@ -99,6 +101,7 @@ export type OtelPluginOptions = {
   redactValues?: string[]
   locationAttributes?: string
   pendingSpans?: boolean | "auto"
+  spanLabels?: boolean
 }
 
 const VALID_PROTOCOLS = new Set<PluginConfig["protocol"]>(["grpc", "http/protobuf", "http/json"])
@@ -293,6 +296,7 @@ export function loadConfig(options: OtelPluginOptions = {}): PluginConfig {
       pickString(process.env["OPENCODE_LOCATION_ATTRIBUTES"]) ??
       ".opencode/attributes.json",
     pendingSpans: resolvePendingSpans(resolvedOptions.pendingSpans, endpoint),
+    spanLabels: pickBoolean(resolvedOptions.spanLabels) ?? !hasNonEmptyEnv("OPENCODE_NO_SPAN_LABELS"),
   }
 }
 

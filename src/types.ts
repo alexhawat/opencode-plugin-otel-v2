@@ -120,6 +120,13 @@ export type HandlerContext = {
    */
   content: (text: string, lengthKey: string, build: (redacted: string) => Record<string, string>) => Record<string, string | number>
   redact: (text: string) => string
+  /**
+   * A readable label attribute for a span: `head`, or `head: detail` when content may be
+   * exported. Empty when `spanLabels` is off.
+   */
+  label: (head: string, detail?: string) => Record<string, string>
+  /** Agent and description of the last subagent dispatch per parent session. */
+  subagentDispatches: Map<string, { agent?: string; description?: string }>
   runPrompts: Map<string, string>
   promptEmitted: Set<string>
 }

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **feat: readable span labels (`spanLabels`, on by default).** A subagent's session and each of
+  its turns were all named `opencode.session`, and nothing in a trace row said which agent or
+  task it was. Every span now also carries a label in `logfire.msg`, which Pydantic Logfire shows
+  as the row's message: `build turn: <prompt>`, `subagent wave-plan-executor: <title>`,
+  `dispatch wave-plan-executor: <description>`, `read: src/queue.rs`, `shell: make test`,
+  `llm deepseek-v4.1-flash`. Span names are unchanged. The detail after the colon is redacted,
+  one line, truncated, and only present when `captureContent` is `full`. Set `spanLabels: false`
+  or `OPENCODE_NO_SPAN_LABELS` to turn labels off.
+- verify: `verify/labels.ts` asserts the labels in `full`, `metadata` and disabled modes,
+  including that a secret in a prompt never reaches a label.
 - **feat: `pendingSpans` option (`OPENCODE_PENDING_SPANS`): running turns show as a tree.** A
   span is exported when it ends, and a turn's root span can stay open for hours, so the LLM and
   tool spans of a running turn reached the backend with a parent it had never seen and were
